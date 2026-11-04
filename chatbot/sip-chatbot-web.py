@@ -8,15 +8,18 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import ticket_lookup
+
 HOST, PORT = "127.0.0.1", 8765
 INDEX = Path(__file__).with_name("sip-chatbot.html")
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 INSTALL_CMD = ["npm", "install", "-g", "@github/copilot"]
 LOG_LIMIT = 8000
+LLM_TIMEOUT = 120
+INDEX_DATA = None
 
 lock = threading.Lock()
 state_lock = threading.Lock()
-first_message = True
 install = {"running": False, "log": "", "error": None}
 login = {"running": False, "output": "", "error": None, "proc": None}
 
@@ -160,18 +163,20 @@ def get_status():
 
 
 def run_copilot(prompt):
-    global first_message
-    with lock:  # jedan upit u datom trenutku, zbog --continue
-        cmd = [COPILOT, "-p", prompt]
-        if not first_message:
-            cmd.append("--continue")
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
-            out = proc.stdout.strip() or proc.stderr.strip() or "(prazan odgovor)"
-        except Exception as e:
-            out = f"Greška: {e}"
-        first_message = False
-        return out
+    """Single independent call (no --continue); raises on failure so lookup() can fall back."""
+    with lock:
+        proc = subprocess.run([COPILOT, "-p", prompt], capture_output=True, text=True,
+                              encoding="utf-8", timeout=LLM_TIMEOUT)
+    if proc.returncode != 0 or not proc.stdout.strip():
+        raise RuntimeError(proc.stderr.strip() or "empty reply")
+    return proc.stdout
+
+
+def load_index():
+    global INDEX_DATA
+    if INDEX_DATA is None:
+        INDEX_DATA = ticket_lookup.TicketIndex.from_csv()
+    return INDEX_DATA
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -218,13 +223,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, "{}")
         if not prompt:
             return self._send(400, "{}")
-        self._send(200, json.dumps({"reply": run_copilot(prompt)}))
+        try:
+            result = ticket_lookup.lookup(prompt, load_index(), run_copilot)
+        except Exception as e:
+            return self._send(500, json.dumps({"reply": f"Greška: {e}"}))
+        self._send(200, json.dumps(result))
 
     def log_message(self, *args):
         pass
 
 
 if __name__ == "__main__":
+    print(f"Učitano tiketa: {len(load_index().tickets)}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://localhost:{PORT}/"
     print(f"Server je pokrenut na {url} (Ctrl+C za izlaz)")

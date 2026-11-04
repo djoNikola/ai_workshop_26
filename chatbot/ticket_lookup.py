@@ -1,0 +1,191 @@
+"""Ticket lookup: ID shortcut, local keyword shortlist, LLM re-rank (see openspec change ticket-lookup-chatbot)."""
+import csv
+import json
+import math
+import re
+import unicodedata
+from collections import Counter
+from pathlib import Path
+
+CSV_PATH = Path(__file__).resolve().parent.parent / "resources" / "issues_export.csv"
+MAX_RESULTS = 3
+SHORTLIST_SIZE = 30
+DESCRIPTION_LIMIT = 500
+ID_RE = re.compile(r"\b([A-Za-z]{2,10}-\d+)\b")
+
+# The export has no decode table. Codes 1/3/4/5/6 follow the Jira defaults; the PM must confirm them.
+STATUS_LABELS = {"1": "Open", "3": "In Progress", "4": "Reopened", "5": "Resolved", "6": "Closed"}
+
+STOPWORDS = set(
+    "il lo la i gli le un uno una di del dello della dei degli delle da dal dalla in nel nella su sul sulla "
+    "con per tra fra e ed o ma che non si ha hanno è al alla allo ai agli alle cliente vuole come anche "
+    "the a an of to in on for with and or but is are was be it this that from at by as not has have client".split()
+)
+
+
+def _norm(text):
+    text = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in text if not unicodedata.combining(c))
+
+
+def tokenize(text):
+    """Lowercase, accent-free tokens cut to 5 chars as a crude stem (covers Italian suffixes)."""
+    tokens = re.findall(r"[a-z0-9]+", _norm(text))
+    return [t[:5] for t in tokens if len(t) > 2 and t not in STOPWORDS]
+
+
+def status_label(code):
+    code = (code or "").strip()
+    return STATUS_LABELS.get(code) or f"Status {code}"
+
+
+def assignee_label(value):
+    value = (value or "").strip()
+    return "Unassigned" if value in ("", "[NULL]") else value
+
+
+def _clean(value):
+    value = (value or "").strip()
+    return "" if value == "[NULL]" else value
+
+
+class TicketIndex:
+    def __init__(self, tickets):
+        self.tickets = {t["pkey"]: t for t in tickets}
+        self._docs = []
+        df = Counter()
+        for t in self.tickets.values():
+            # summary counts double
+            tokens = tokenize(t["summary"]) * 2 + tokenize(t["description"])
+            counts = Counter(tokens)
+            self._docs.append((t["pkey"], counts, len(tokens)))
+            df.update(counts.keys())
+        n = len(self._docs)
+        self._idf = {w: math.log(1 + (n - f + 0.5) / (f + 0.5)) for w, f in df.items()}
+        self._avg_len = (sum(d[2] for d in self._docs) / n) if n else 0
+
+    @classmethod
+    def from_csv(cls, path=CSV_PATH):
+        tickets = []
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
+            for row in csv.DictReader(f):
+                pkey = (row.get("PKEY") or "").strip()
+                if not pkey:
+                    continue
+                tickets.append({
+                    "pkey": pkey,
+                    "summary": _clean(row.get("SUMMARY")),
+                    "description": _clean(row.get("DESCRIPTION"))[:DESCRIPTION_LIMIT],
+                    "status": status_label(row.get("ISSUESTATUS")),
+                    "assignee": assignee_label(row.get("ASSIGNEE")),
+                })
+        return cls(tickets)
+
+    def get(self, pkey):
+        return self.tickets.get(pkey.upper())
+
+    def shortlist(self, query, size=SHORTLIST_SIZE):
+        """BM25 ranking; tickets sharing no query term are never returned."""
+        q_terms = set(tokenize(query))
+        if not q_terms:
+            return []
+        k1, b = 1.5, 0.75
+        scored = []
+        for pkey, counts, length in self._docs:
+            score = 0.0
+            for term in q_terms:
+                tf = counts.get(term)
+                if tf:
+                    norm = tf + k1 * (1 - b + b * length / (self._avg_len or 1))
+                    score += self._idf[term] * tf * (k1 + 1) / norm
+            if score > 0:
+                scored.append((score, pkey))
+        scored.sort(key=lambda s: (-s[0], s[1]))
+        return [self.tickets[pkey] for _, pkey in scored[:size]]
+
+
+def extract_ids(text):
+    seen = []
+    for m in ID_RE.findall(text):
+        key = m.upper()
+        if key not in seen:
+            seen.append(key)
+    return seen
+
+
+def build_prompt(query, shortlist):
+    """Only the allowed fields for the shortlisted tickets are sent."""
+    rows = [
+        {"pkey": t["pkey"], "summary": t["summary"], "description": t["description"],
+         "status": t["status"], "assignee": t["assignee"]}
+        for t in shortlist
+    ]
+    return (
+        "You match a client's problem description to support tickets. The description may be Italian or English.\n"
+        f"Pick at most {MAX_RESULTS} tickets from the list below that really match the description, best first. "
+        "Return an empty list if none is relevant. Use only pkey values from the list.\n"
+        'Reply with JSON only, no other text, in the form '
+        '{"results":[{"pkey":"BTU-1","reason":"one short sentence in the language of the description"}]}\n\n'
+        f"Client description:\n{query}\n\nTickets:\n{json.dumps(rows, ensure_ascii=False)}\n"
+    )
+
+
+def parse_llm_results(output, shortlist):
+    """Returns [(pkey, reason)] limited to shortlist IDs; raises ValueError on unusable output."""
+    allowed = {t["pkey"] for t in shortlist}
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"\{", output or ""):
+        try:
+            data, _ = decoder.raw_decode(output[m.start():])
+        except ValueError:
+            continue
+        if isinstance(data, dict) and isinstance(data.get("results"), list):
+            results = []
+            for item in data["results"]:
+                if not isinstance(item, dict):
+                    continue
+                pkey = str(item.get("pkey", "")).strip().upper()
+                if pkey in allowed and pkey not in [r[0] for r in results]:
+                    results.append((pkey, str(item.get("reason", "")).strip()))
+            return results[:MAX_RESULTS]
+    raise ValueError("no valid JSON result in LLM output")
+
+
+def _candidate(ticket, reason):
+    return {"pkey": ticket["pkey"], "summary": ticket["summary"], "status": ticket["status"],
+            "assignee": ticket["assignee"], "reason": reason}
+
+
+def format_reply(notes, candidates):
+    lines = list(notes)
+    for i, c in enumerate(candidates, 1):
+        lines.append(f"{i}. {c['pkey']} - {c['summary']}\n   Status: {c['status']} | Assignee: {c['assignee']}")
+        if c["reason"]:
+            lines.append(f"   {c['reason']}")
+    return "\n".join(lines)
+
+
+def lookup(query, index, llm):
+    """llm(prompt) -> str. Returns {"reply": str, "candidates": [...]}."""
+    notes, candidates = [], []
+    for pkey in extract_ids(query):
+        ticket = index.get(pkey)
+        if ticket and len(candidates) < MAX_RESULTS:
+            candidates.append(_candidate(ticket, "Exact ticket ID match."))
+        elif not ticket:
+            notes.append(f"Ticket {pkey} was not found.")
+
+    text = ID_RE.sub(" ", query)
+    shortlist = [t for t in index.shortlist(text) if t["pkey"] not in {c["pkey"] for c in candidates}]
+    room = MAX_RESULTS - len(candidates)
+    if shortlist and room > 0:
+        try:
+            ranked = parse_llm_results(llm(build_prompt(text.strip(), shortlist)), shortlist)
+            candidates += [_candidate(index.tickets[p], r) for p, r in ranked[:room]]
+        except Exception:
+            notes.append("LLM ranking was unavailable; showing the best keyword matches.")
+            candidates += [_candidate(t, "") for t in shortlist[:room]]
+
+    if not candidates:
+        notes.append("No matching ticket found. Try adding more detail (system, site, error).")
+    return {"reply": format_reply(notes, candidates), "candidates": candidates}

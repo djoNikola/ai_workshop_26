@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Copilot CLI Chat</title>
+<title>SIP Ticket Lookup</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center;
@@ -20,6 +20,10 @@
   input { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 8px; }
   button { padding: 10px 18px; font-size: 15px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
   button:disabled { background: #9ca3af; cursor: default; }
+  .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; margin-top: 6px; background: #f9fafb; }
+  .card .id { font-weight: 600; color: #1d4ed8; }
+  .card .meta { font-size: 13px; color: #374151; }
+  .card .why { font-size: 13px; color: #6b7280; font-style: italic; }
   #setup { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
   #setup[hidden] { display: none; }
   #setup p { margin: 0 0 8px; }
@@ -30,11 +34,11 @@
 </head>
 <body>
 <main>
-  <h1>Copilot CLI Chat</h1>
+  <h1>SIP Ticket Lookup</h1>
   <div id="setup" hidden></div>
   <div id="log"></div>
   <form id="form">
-    <input id="entry" autocomplete="off" placeholder="Napiši poruku..." autofocus>
+    <input id="entry" autocomplete="off" placeholder="Opiši problem klijenta ili upiši broj tiketa (IT/EN)..." autofocus>
     <button id="btn" type="submit">Pošalji</button>
   </form>
 </main>
@@ -128,13 +132,27 @@
     return t;
   }
 
+  function renderReply(out, data) {
+    if (!Array.isArray(data.candidates)) { out.textContent = data.reply; return; }
+    out.replaceChildren();
+    const notes = (data.reply || "").split("\n").filter(l => !/^\s*\d+\. |^\s{3}/.test(l));
+    for (const n of notes) out.append(el("div", n));
+    for (const c of data.candidates) {
+      const card = el("div", "", "card");
+      card.append(el("div", c.pkey + " - " + c.summary, "id"),
+                  el("div", "Status: " + c.status + " | Assignee: " + c.assignee, "meta"));
+      if (c.reason) card.append(el("div", c.reason, "why"));
+      out.append(card);
+    }
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const prompt = entry.value.trim();
     if (!prompt || !ready || busy) return;
     entry.value = "";
     add("user", "Ti", prompt);
-    const out = add("bot", "Copilot", "Razmišljam...");
+    const out = add("bot", "SIP Bot", "Tražim...");
     busy = true;
     btn.disabled = true;
     try {
@@ -145,7 +163,7 @@
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
-      out.textContent = data.reply;
+      renderReply(out, data);
     } catch (err) {
       out.textContent = "Greška: " + err.message;
     }

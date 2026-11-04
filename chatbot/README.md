@@ -1,11 +1,33 @@
 
-# Copilot CLI Web Chat
+# SIP Ticket Lookup (web chat)
 
-Lokalni web chat koji šalje poruke Copilot CLI-ju (`copilot -p ...`) i prikazuje odgovore u browseru.
+Lokalni web chat za PM-a: upiše opis problema klijenta (IT/EN) ili broj tiketa, a chat vraća do 3 kandidata
+(ID, naslov, status, assignee, kratko obrazloženje). Podaci se čitaju iz `../resources/issues_export.csv`.
+
+## Kako radi
+
+1. Ako poruka sadrži ID (npr. `BTU-4114`) i tiket postoji, prikazuje se prvi. Ako ne postoji, chat to kaže i traži dalje po ostatku teksta.
+2. Lokalna BM25 pretraga bira do 30 kandidata iz CSV-a.
+3. Copilot CLI (`copilot -p`) rangira te kandidate i vraća JSON; ID, status i assignee uvek se čitaju iz CSV-a.
+4. Ako Copilot ne radi, prikazuju se top 3 lokalna pogotka uz napomenu. Ako ništa ne odgovara: „No matching ticket found“.
+
+Svaki upit je nezavistan (nema `--continue`). Labele statusa su u `STATUS_LABELS` u `ticket_lookup.py`
+(1/3/4/5/6 prema Jira podrazumevanim vrednostima — PM treba da potvrdi); nepoznati kodovi se prikazuju kao `Status <kod>`.
+
+**Privatnost:** upit i najviše 30 isečaka tiketa (ID, naslov, skraćen opis, status, assignee) šalju se Copilot servisu.
+Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stvarne upotrebe (vidi `SPEC.md` §10).
+
+## Testovi
+
+```bash
+cd chatbot && python3 -m unittest test_ticket_lookup
+```
 
 ## Fajlovi
 
 - `sip-chatbot-web.py` – lokalni server (samo standardna biblioteka, bez `pip install`)
+- `ticket_lookup.py` – učitavanje CSV-a, pretraga i rangiranje
+- `test_ticket_lookup.py` – unit testovi
 - `sip-chatbot.html` – stranica sa chatom; mora biti u istom folderu kao server
 - `sip-chatbot.py` – originalna Tkinter verzija (opciono)
 
@@ -41,8 +63,7 @@ Dok Copilot nije spreman, dugme „Pošalji " je onemogućeno.
 
 - Upiši poruku i pritisni Enter ili „Pošalji ".
 - Prvi odgovor može da traje desetak sekundi ili duže, jer se za svaku poruku pokreće `copilot`.
-- Poruke se šalju jedna po jedna. Posle prve se koristi `--continue`, pa razgovor ima kontekst prethodnih poruka.
-- Restart servera počinje novi razgovor.
+- Poruke se šalju jedna po jedna. Svaki upit je nezavistan; prethodne poruke se ne uzimaju u obzir.
 
 ## Rešavanje problema
 
