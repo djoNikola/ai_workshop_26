@@ -37,12 +37,20 @@ The PM types a free-text description of a client's issue, in Italian or English.
 
 **Hybrid: local shortlist, then LLM re-rank.** The CSV has ~3,800 tickets with long descriptions, which is too large to send in one prompt.
 
-1. **Load**: parse the CSV once at server start, keeping `PKEY, SUMMARY, DESCRIPTION, ISSUESTATUS, ASSIGNEE`. Trim descriptions to ~500 characters for matching and display.
-2. **Shortlist** (local, no LLM): score tickets by keyword overlap (TF-IDF or BM25, stdlib or small dependency) on SUMMARY + DESCRIPTION, and keep the top N (default 30). This works across Italian and English tokens.
-3. **Re-rank** (LLM via the existing Copilot CLI call): the prompt contains the PM's query and the shortlist. The LLM returns JSON: up to 3 `{pkey, reason}` items, or an empty list. The LLM may only return IDs present in the shortlist.
+0. **ID shortcut**: a ticket ID in the message (`[A-Za-z]{2,10}-\d+`, case-insensitive) is looked up directly. An existing ticket is listed first. A missing ID adds a "not found" note, and the message with the ID removed continues to step 2. If only an existing ID was given, steps 2–3 are skipped.
+1. **Load**: parse the CSV once at server start, keeping `PKEY, SUMMARY, DESCRIPTION, ISSUESTATUS, ASSIGNEE`. Trim descriptions to 500 characters. `[NULL]` values become empty.
+2. **Shortlist** (local, no LLM): BM25 ranking (k1 = 1.5, b = 0.75, stdlib only) over SUMMARY + DESCRIPTION, keeping the top 30.
+   - Text is lowercased and accents removed. Tokens of 2 characters or fewer and common Italian/English stopwords are dropped.
+   - Each token is cut to its first 5 characters as a crude stem, so "consegna", "consegnati" and "consegnare" match.
+   - SUMMARY counts twice, so it weighs more than DESCRIPTION.
+   - Tickets sharing no token with the query are never shortlisted. An empty shortlist means "no match" without calling the LLM.
+3. **Re-rank** (LLM via the existing Copilot CLI call, one independent `copilot -p` call per query, 120 s timeout): the prompt contains the PM's query and the shortlist (`pkey`, `summary`, `description`, `status`, `assignee`). The LLM must reply with JSON only: up to 3 `{pkey, reason}` items, or an empty list. The reply is parsed leniently (first valid JSON object in the output). IDs not in the shortlist are dropped.
 4. **Render**: the server looks up ID, summary, status and assignee from the loaded data by `pkey`, not from LLM text. This stops the LLM from altering factual fields.
+5. **Fallback**: if the LLM call fails or returns unusable output, show the top 3 shortlist tickets (without a reason) and a notice that LLM ranking was unavailable. If the LLM returns an empty list, answer "no match".
 
-The ID shortcut in the user flow bypasses steps 2–3.
+Result limit: at most 3 candidates in total, with ID-matched tickets first.
+
+**Known limitation**: the shortlist is lexical. A cross-language query (for example English words against an Italian ticket) can miss the right ticket when no tokens overlap, and the LLM only sees what the shortlist contains.
 
 ## 5. Requirements
 
