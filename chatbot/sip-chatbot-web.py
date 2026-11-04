@@ -1,0 +1,245 @@
+import json
+import os
+import re
+import shutil
+import subprocess
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+HOST, PORT = "127.0.0.1", 8765
+INDEX = Path(__file__).with_name("sip-chatbot.html")
+ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+INSTALL_CMD = ["npm", "install", "-g", "@github/copilot"]
+LOG_LIMIT = 8000
+
+lock = threading.Lock()
+state_lock = threading.Lock()
+first_message = True
+install = {"running": False, "log": "", "error": None}
+login = {"running": False, "output": "", "error": None, "proc": None}
+
+
+def find_copilot():
+    path = shutil.which("copilot")
+    if path:
+        return path
+    # PATH ovog procesa može biti zastareo odmah posle `npm install -g`
+    npm = shutil.which("npm")
+    if not npm:
+        return None
+    try:
+        prefix = subprocess.run([npm, "prefix", "-g"], capture_output=True, text=True, timeout=30).stdout.strip()
+    except Exception:
+        return None
+    for name in ("copilot.cmd", "copilot"):
+        for base in (prefix, os.path.join(prefix, "bin")):
+            candidate = os.path.join(base, name)
+            if prefix and os.path.isfile(candidate):
+                return candidate
+    return None
+
+
+COPILOT = find_copilot()
+
+
+def is_logged_in():
+    if any(os.environ.get(v) for v in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")):
+        return True
+    home = Path(os.environ.get("COPILOT_HOME") or Path.home() / ".copilot")
+    try:
+        text = (home / "config.json").read_text(encoding="utf-8")
+        text = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("//"))
+        return bool(json.loads(text).get("loggedInUsers"))
+    except (OSError, ValueError):
+        return False
+
+
+def kill_tree(proc):
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
+    else:
+        proc.kill()
+
+
+def stream_process(cmd, target, key):
+    """Pokreće komandu i dopisuje njen izlaz u target[key]; vraća kod izlaza."""
+    proc = subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    with state_lock:
+        target["proc"] = proc
+    for line in proc.stdout:
+        with state_lock:
+            target[key] = (target[key] + line)[-LOG_LIMIT:]
+    return proc.wait()
+
+
+def install_worker():
+    global COPILOT
+    npm = shutil.which("npm")
+    try:
+        if not npm:
+            raise RuntimeError("npm nije pronađen. Instaliraj Node.js (https://nodejs.org) pa pokušaj ponovo.")
+        code = stream_process([npm] + INSTALL_CMD[1:], install, "log")
+        if code != 0:
+            raise RuntimeError(f"Instalacija nije uspela (kod {code}).")
+        found = find_copilot()
+        if not found:
+            raise RuntimeError("Copilot je instaliran, ali nije u PATH-u. Restartuj terminal i server.")
+        COPILOT = found
+    except Exception as e:
+        with state_lock:
+            install["error"] = str(e)
+    finally:
+        with state_lock:
+            install["running"] = False
+            install.pop("proc", None)
+
+
+def login_worker():
+    try:
+        code = stream_process([COPILOT, "login", "--device-code"], login, "output")
+        if code != 0:
+            raise RuntimeError(f"Prijava nije uspela (kod {code}).")
+    except Exception as e:
+        with state_lock:
+            login["error"] = str(e)
+    finally:
+        with state_lock:
+            login["running"] = False
+            login["proc"] = None
+
+
+def start_install():
+    with state_lock:
+        if install["running"] or COPILOT:
+            return
+        install.update(running=True, log="", error=None)
+    threading.Thread(target=install_worker, daemon=True).start()
+
+
+def start_login():
+    with state_lock:
+        if login["running"] or not COPILOT:
+            return
+        login.update(running=True, output="", error=None, proc=None)
+    threading.Thread(target=login_worker, daemon=True).start()
+
+
+def get_status():
+    with state_lock:
+        if install["running"]:
+            state = "installing"
+        elif not COPILOT:
+            state = "no_copilot"
+        elif login["running"]:
+            state = "logging_in"
+        elif not is_logged_in():
+            state = "needs_login"
+        else:
+            state = "ready"
+        out = {
+            "state": state,
+            "npm": bool(shutil.which("npm")),
+            "install_cmd": " ".join(INSTALL_CMD),
+            "install_log": install["log"],
+            "install_error": install["error"],
+            "login_error": login["error"],
+        }
+        text = login["output"]
+    url = re.search(r"https://\S+", text)
+    code = re.search(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b", text)
+    out["login_url"] = url.group(0) if url else None
+    out["login_code"] = code.group(0) if code else None
+    return out
+
+
+def run_copilot(prompt):
+    global first_message
+    with lock:  # jedan upit u datom trenutku, zbog --continue
+        cmd = [COPILOT, "-p", prompt]
+        if not first_message:
+            cmd.append("--continue")
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+            out = proc.stdout.strip() or proc.stderr.strip() or "(prazan odgovor)"
+        except Exception as e:
+            out = f"Greška: {e}"
+        first_message = False
+        return out
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, code, body, ctype="application/json; charset=utf-8"):
+        data = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _host_ok(self):
+        return self.headers.get("Host") in ALLOWED_HOSTS
+
+    def do_GET(self):
+        if not self._host_ok():
+            return self._send(403, "{}")
+        if self.path in ("/", "/index.html"):
+            return self._send(200, INDEX.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+        if self.path == "/api/status":
+            return self._send(200, json.dumps(get_status()))
+        self._send(404, "{}")
+
+    def do_POST(self):
+        if not self._host_ok():
+            return self._send(403, "{}")
+        origin = self.headers.get("Origin")
+        if origin and origin.split("://", 1)[-1] not in ALLOWED_HOSTS:
+            return self._send(403, "{}")
+        if self.path == "/api/install":
+            start_install()
+            return self._send(200, json.dumps(get_status()))
+        if self.path == "/api/login":
+            start_login()
+            return self._send(200, json.dumps(get_status()))
+        if self.path != "/api/chat":
+            return self._send(404, "{}")
+        if get_status()["state"] != "ready":
+            return self._send(409, json.dumps({"reply": "Copilot nije spreman (instalacija ili prijava)."}))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            prompt = json.loads(self.rfile.read(length)).get("prompt", "").strip()
+        except (ValueError, AttributeError):
+            return self._send(400, "{}")
+        if not prompt:
+            return self._send(400, "{}")
+        self._send(200, json.dumps({"reply": run_copilot(prompt)}))
+
+    def log_message(self, *args):
+        pass
+
+
+if __name__ == "__main__":
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    url = f"http://localhost:{PORT}/"
+    print(f"Server je pokrenut na {url} (Ctrl+C za izlaz)")
+    if not COPILOT:
+        print("Copilot CLI nije instaliran. Potvrdi instalaciju na stranici u browseru.")
+    elif not is_logged_in():
+        print("Copilot CLI nije prijavljen. Prijavi se na stranici u browseru.")
+    webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        with state_lock:
+            procs = [install.get("proc"), login.get("proc")]
+        for p in procs:
+            if p:
+                kill_tree(p)
