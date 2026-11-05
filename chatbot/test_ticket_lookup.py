@@ -106,6 +106,15 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(len(r["candidates"]), tl.MAX_RESULTS)
         self.assertIn("LLM ranking was unavailable", r["reply"])
 
+    def test_italian_notes(self):
+        r = tl.lookup("BTU-99999 zzzqx", INDEX, failing_llm, "it")
+        self.assertIn("Il ticket BTU-99999 non è stato trovato", r["reply"])
+        self.assertIn("Nessun ticket corrispondente trovato", r["reply"])
+
+    def test_unknown_lang_falls_back_to_english(self):
+        r = tl.lookup("zzzqx wwwvk", INDEX, failing_llm, "xx")
+        self.assertIn("No matching ticket found", r["reply"])
+
     def test_max_three_and_csv_facts(self):
         keys = [t["pkey"] for t in INDEX.shortlist("preanalitica")][:6]
         r = tl.lookup("preanalitica", INDEX, llm_returning(*keys))

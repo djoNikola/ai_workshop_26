@@ -1,5 +1,5 @@
 
-# SIP Ticket Lookup (web chat)
+# SIP Tickets Miner (web chat)
 
 Lokalni web chat za PM-a: upiše opis problema klijenta (IT/EN) ili broj tiketa, a chat vraća do 3 kandidata
 (ID, naslov, status, assignee, kratko obrazloženje). Podaci se čitaju iz `../resources/issues_export.csv`.
@@ -13,6 +13,15 @@ Lokalni web chat za PM-a: upiše opis problema klijenta (IT/EN) ili broj tiketa,
 
 Svaki upit je nezavistan (nema `--continue`). Labele statusa su u `STATUS_LABELS` u `ticket_lookup.py`
 (1/3/4/5/6 prema Jira podrazumevanim vrednostima — PM treba da potvrdi); nepoznati kodovi se prikazuju kao `Status <kod>`.
+
+**Jezik interfejsa:** podrazumevano engleski; dugme `EN`/`IT` gore desno prebacuje na italijanski i izbor se pamti
+u browseru (`localStorage`). Tekstovi stranice su u objektu `T` u `static/app.js`, a fiksne napomene chata
+(„not found“, „no match“…) u `MESSAGES` u `ticket_lookup.py` (`/api/chat` prima `lang`: `en` ili `it`).
+Obrazloženje koje daje Copilot ostaje na jeziku upita.
+
+**Tema:** svetla i tamna (obe prigušene). Pri prvom otvaranju prati sistemsku temu, a ikonica sunca/meseca levo od
+izbora jezika je menja; izbor se pamti u browseru. Boje su CSS promenljive u `static/style.css`
+(`[data-theme="light"]` / `[data-theme="dark"]`).
 
 **Privatnost:** upit i najviše 30 isečaka tiketa (ID, naslov, skraćen opis, status, assignee) šalju se Copilot servisu.
 Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stvarne upotrebe (vidi `SPEC.md` §10).
@@ -30,7 +39,10 @@ cd chatbot && python3 -m unittest test_ticket_lookup
 - `sip-chatbot-web.py` – lokalni server (samo standardna biblioteka, bez `pip install`)
 - `ticket_lookup.py` – učitavanje CSV-a, pretraga i rangiranje
 - `test_ticket_lookup.py` – unit testovi
-- `sip-chatbot.html` – stranica sa chatom; mora biti u istom folderu kao server
+- `sip-chatbot.html` – struktura stranice (HTML); mora biti u istom folderu kao server
+- `static/style.css` – stilovi stranice
+- `static/app.js` – logika stranice (chat, setup panel, prevodi EN/IT, promena teme)
+- `static/theme.js` – primenjuje sačuvanu/sistemsku temu pre iscrtavanja stranice
 - `sip-chatbot.py` – originalna Tkinter verzija (opciono)
 
 ## Preduslovi
@@ -55,15 +67,15 @@ Stranicu otvaraj uvek preko `http://localhost:8765/`. Dvoklik na HTML fajl ne ra
 
 Gore na stranici se prikazuje panel sa trenutnim stanjem:
 
-1. **Copilot nije instaliran** – klikni „Da, instaliraj“. Server izvršava `npm install -g @github/copilot` i uživo prikazuje izlaz.
-2. **Nisi prijavljen** – klikni „Prijavi se“. Otvori prikazani link (`https://github.com/login/device`), unesi prikazani kod i odobri pristup. Stranica sama prepozna prijavu.
+1. **Copilot is not installed** – klikni „Yes, install“. Server izvršava `npm install -g @github/copilot` i uživo prikazuje izlaz.
+2. **Not signed in** – klikni „Sign in“. Otvori prikazani link (`https://github.com/login/device`), unesi prikazani kod i odobri pristup. Stranica sama prepozna prijavu.
 3. **Spreman** – panel nestaje i možeš da pišeš poruke.
 
-Dok Copilot nije spreman, dugme „Pošalji " je onemogućeno.
+Dok Copilot nije spreman, dugme „Send“ je onemogućeno.
 
 ## Korišćenje chata
 
-- Upiši poruku i pritisni Enter ili „Pošalji ".
+- Upiši poruku i pritisni Enter ili „Send“.
 - Prvi odgovor može da traje desetak sekundi ili duže, jer se za svaku poruku pokreće `copilot`.
 - Poruke se šalju jedna po jedna. Svaki upit je nezavistan; prethodne poruke se ne uzimaju u obzir.
 
@@ -71,10 +83,10 @@ Dok Copilot nije spreman, dugme „Pošalji " je onemogućeno.
 
 | Problem | Rešenje |
 |---|---|
-| „Failed to fetch“ / „Server nije dostupan“ | Server nije pokrenut ili je ugašen. Pokreni ga ponovo i osveži stranicu. |
+| „Failed to fetch“ / „Server is not reachable“ | Server nije pokrenut ili je ugašen. Pokreni ga ponovo i osveži stranicu. |
 | Port 8765 je zauzet | Zatvori drugi program na tom portu ili promeni `PORT` u `sip-chatbot-web.py`. |
-| „npm nije pronađen“ | Instaliraj Node.js sa https://nodejs.org pa restartuj terminal. |
-| Instaliran, ali „nije u PATH-u“ | Restartuj terminal i server. |
+| „npm was not found“ | Instaliraj Node.js sa https://nodejs.org pa restartuj terminal. |
+| Instaliran, ali „not in PATH“ | Restartuj terminal i server. |
 | Prijava ne prolazi | Pokreni `copilot login` ručno u terminalu, ili postavi `GH_TOKEN`/`COPILOT_GITHUB_TOKEN`. |
 
 ## Bezbednost

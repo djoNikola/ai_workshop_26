@@ -1,178 +1,35 @@
 <!DOCTYPE html>
-<html lang="sr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SIP Ticket Lookup</title>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center;
-        font-family: system-ui, sans-serif; background: #f3f4f6; }
-  main { width: 100%; max-width: 900px; height: 100%; display: flex; flex-direction: column; padding: 12px; }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  #log { flex: 1; overflow-y: auto; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; }
-  .msg { margin-bottom: 12px; }
-  .who { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-  .user .who { color: #2563eb; }
-  .bot .who { color: #059669; }
-  .text { white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; }
-  form { display: flex; gap: 8px; margin-top: 8px; }
-  input { flex: 1; padding: 10px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 8px; }
-  button { padding: 10px 18px; font-size: 15px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
-  button:disabled { background: #9ca3af; cursor: default; }
-  .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; margin-top: 6px; background: #f9fafb; }
-  .card .id { font-weight: 600; color: #1d4ed8; }
-  .card .meta { font-size: 13px; color: #374151; }
-  .card .why { font-size: 13px; color: #6b7280; font-style: italic; }
-  #setup { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-  #setup[hidden] { display: none; }
-  #setup p { margin: 0 0 8px; }
-  #setup pre { max-height: 140px; overflow: auto; background: #111827; color: #e5e7eb; padding: 8px; border-radius: 6px; font-size: 12px; margin: 8px 0 0; white-space: pre-wrap; }
-  #setup .code { font: 600 22px monospace; letter-spacing: 2px; background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 2px 10px; }
-  #setup .err { color: #b91c1c; }
-</style>
+<meta name="color-scheme" content="light dark">
+<title>SIP Tickets Miner</title>
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <main>
-  <h1>SIP Ticket Lookup</h1>
-  <p style="margin: 0 0 8px;"><a href="/categorize">Ticket categorization</a> | <a href="/recommend">Expert recommendation</a></p>
+  <header>
+    <h1>SIP Tickets Miner</h1>
+    <div class="tools">
+      <button type="button" id="theme" class="icon-btn">
+        <svg class="icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
+        <svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div id="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true" title="English"><svg class="flag" viewBox="0 0 60 30" aria-hidden="true"><clipPath id="gb-s"><path d="M0,0v30h60v-30z"/></clipPath><clipPath id="gb-t"><path d="M30,15h30v15zv15h-30zh-30v-15zv-15h30z"/></clipPath><g clip-path="url(#gb-s)"><path d="M0,0v30h60v-30z" fill="#012169"/><path d="M0,0L60,30M60,0L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0L60,30M60,0L0,30" clip-path="url(#gb-t)" stroke="#C8102E" stroke-width="4"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></g></svg>EN</button>
+        <button type="button" data-lang="it" aria-pressed="false" title="Italiano"><svg class="flag" viewBox="0 0 3 2" aria-hidden="true"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#CE2B37"/></svg>IT</button>
+      </div>
+    </div>
+  </header>
   <div id="setup" hidden></div>
   <div id="log"></div>
   <form id="form">
-    <input id="entry" autocomplete="off" placeholder="Opiši problem klijenta ili upiši broj tiketa (IT/EN)..." autofocus>
-    <button id="btn" type="submit">Pošalji</button>
+    <input id="entry" autocomplete="off" autofocus>
+    <button id="btn" type="submit"></button>
   </form>
 </main>
-<script>
-  const log = document.getElementById("log");
-  const form = document.getElementById("form");
-  const entry = document.getElementById("entry");
-  const btn = document.getElementById("btn");
-  const setup = document.getElementById("setup");
-  let ready = false;
-  let busy = false;
-
-  function el(tag, text, cls) {
-    const e = document.createElement(tag);
-    if (text) e.textContent = text;
-    if (cls) e.className = cls;
-    return e;
-  }
-
-  function action(label, path) {
-    const b = el("button", label);
-    b.type = "button";
-    b.onclick = async () => {
-      b.disabled = true;
-      await fetch(path, { method: "POST" });
-      refresh();
-    };
-    return b;
-  }
-
-  function renderSetup(s) {
-    setup.replaceChildren();
-    if (s.state === "no_copilot") {
-      setup.append(el("p", "Copilot CLI nije instaliran. Želiš li da se instalira komandom: " + s.install_cmd + " ?"));
-      if (!s.npm) setup.append(el("p", "npm nije pronađen. Prvo instaliraj Node.js (https://nodejs.org).", "err"));
-      else setup.append(action("Da, instaliraj", "/api/install"));
-    } else if (s.state === "installing") {
-      setup.append(el("p", "Instalacija u toku..."));
-    } else if (s.state === "needs_login") {
-      setup.append(el("p", "Copilot je instaliran, ali nisi prijavljen."));
-      setup.append(action("Prijavi se", "/api/login"));
-    } else if (s.state === "logging_in") {
-      setup.append(el("p", "Otvori stranicu za prijavu i unesi kod:"));
-      if (s.login_code && s.login_url && s.login_url.startsWith("https://")) {
-        const a = el("a", s.login_url);
-        a.href = s.login_url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        const p = el("p");
-        p.append(a, " ", el("span", s.login_code, "code"));
-        setup.append(p, el("p", "Čekam autorizaciju..."));
-      } else {
-        setup.append(el("p", "Pripremam kod za prijavu..."));
-      }
-    }
-    for (const msg of [s.install_error, s.login_error]) {
-      if (msg && s.state !== "installing" && s.state !== "logging_in") setup.append(el("p", msg, "err"));
-    }
-    if (s.state === "installing" && s.install_log) setup.append(el("pre", s.install_log));
-    setup.hidden = s.state === "ready";
-  }
-
-  async function refresh() {
-    try {
-      const s = await (await fetch("/api/status")).json();
-      ready = s.state === "ready";
-      renderSetup(s);
-    } catch (err) {
-      ready = false;
-      setup.replaceChildren(el("p", "Server nije dostupan. Pokreni sip-chatbot-web.py.", "err"));
-      setup.hidden = false;
-    }
-    btn.disabled = busy || !ready;
-  }
-
-  refresh();
-  setInterval(refresh, 2000);
-
-  function add(cls, who, text) {
-    const m = document.createElement("div");
-    m.className = "msg " + cls;
-    const w = document.createElement("div");
-    w.className = "who";
-    w.textContent = who;
-    const t = document.createElement("div");
-    t.className = "text";
-    t.textContent = text;
-    m.append(w, t);
-    log.appendChild(m);
-    log.scrollTop = log.scrollHeight;
-    return t;
-  }
-
-  function renderReply(out, data) {
-    if (!Array.isArray(data.candidates)) { out.textContent = data.reply; return; }
-    out.replaceChildren();
-    const notes = (data.reply || "").split("\n").filter(l => !/^\s*\d+\. |^\s{3}/.test(l));
-    for (const n of notes) out.append(el("div", n));
-    for (const c of data.candidates) {
-      const card = el("div", "", "card");
-      card.append(el("div", c.pkey + " - " + c.summary, "id"),
-                  el("div", "Status: " + c.status + " | Assignee: " + c.assignee, "meta"));
-      if (c.reason) card.append(el("div", c.reason, "why"));
-      out.append(card);
-    }
-  }
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const prompt = entry.value.trim();
-    if (!prompt || !ready || busy) return;
-    entry.value = "";
-    add("user", "Ti", prompt);
-    const out = add("bot", "SIP Bot", "Tražim...");
-    busy = true;
-    btn.disabled = true;
-    try {
-      const r = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
-      renderReply(out, data);
-    } catch (err) {
-      out.textContent = "Greška: " + err.message;
-    }
-    busy = false;
-    btn.disabled = !ready;
-    entry.focus();
-    log.scrollTop = log.scrollHeight;
-  });
-</script>
+<script src="/static/app.js"></script>
 </body>
 </html>
