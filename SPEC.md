@@ -9,12 +9,12 @@ The PM types a free-text description of a client's issue, in Italian or English.
 ## 2. Scope
 
 **In scope**
-- Single-user local web chat, based on the existing `chatbot/sip-chatbot-web.py` and `sip-chatbot.html`.
+- Single-user local web chat named **SIP Tickets Miner** (the bot is "Miner"), based on the existing `chatbot/sip-chatbot-web.py` and `sip-chatbot.html`.
+- UI in English (default) or Italian, switchable in the page (EN/IT, choice saved in `localStorage`), and light/dark themes (first visit follows the system theme, choice saved).
 - Ticket data: `resources/issues_export.csv`, used for both development and the demo.
 - LLM-based matching of a free-text description to tickets.
 - Ticket-ID detection in the input, with fallback to text search when the ID does not exist.
-- Italian and English input; replies in the language of the question.
-- Issue categorization page at `/categorize` (see §13).
+- Italian and English input. The LLM's match reason is in the language of the question; the fixed chat notes (not found, no match, LLM unavailable, exact ID match) follow the UI language.
 
 **Out of scope**
 - Live connection to the ticketing system.
@@ -69,6 +69,9 @@ Result limit: at most 3 candidates in total, with ID-matched tickets first.
 | R10 | If the LLM call fails or returns invalid JSON, the chat shows the local shortlist top 3 and a notice that LLM ranking was unavailable. |
 | R11 | The server runs locally, binds only to `127.0.0.1` and keeps the existing Host/Origin checks. |
 | R12 | Responses arrive within ~30 s (the Copilot CLI call dominates). |
+| R13 | The UI is English by default with an EN/IT switch; the choice persists. Fixed chat notes follow the selected language, and unknown `lang` values fall back to English. |
+| R14 | The UI offers light and dark themes, following the system theme on first visit and persisting the user's choice. |
+| R15 | The server serves only the whitelisted static files; any other `/static` path returns 404. |
 
 ## 6. Acceptance criteria
 
@@ -106,7 +109,10 @@ These expected results must be checked against the real CSV before the demo. If 
 
 - Copilot CLI (`copilot -p`) is installed and logged in, as already handled by `sip-chatbot-web.py`.
 - Change `run_copilot` so that each lookup is independent (no `--continue`) and the prompt requests JSON-only output.
-- New endpoint behaviour: `/api/chat` keeps its URL and `{"reply": ...}` shape; the reply becomes the formatted candidate list. `sip-chatbot.html` may need light changes for rendering (a list or table per candidate).
+- New endpoint behaviour: `/api/chat` keeps its URL; the reply becomes the formatted candidate list. The request body is `{"prompt": ..., "lang": "en"|"it"}`; an unknown or missing `lang` falls back to `en`. `ticket_lookup.lookup()` returns its fixed notes (`MESSAGES`) in that language. Errors return an `error` key (`not_ready`, `generic`) plus `reply`.
+- Setup/login failures are reported as keys (`SetupError`: `npm_missing`, `install_failed`, `not_in_path`, `login_failed`) that the page translates.
+- Front end is split into `sip-chatbot.html` (structure), `static/style.css` (CSS variables for light/dark themes), `static/app.js` (chat, setup panel, EN/IT texts, theme toggle) and `static/theme.js` (loaded in `<head>` to apply the theme before first render). The server serves only the files listed in `STATIC_FILES`; any other `/static` path returns 404.
+- UI: user messages on the right, Miner's on the left (mining-helmet avatar); ticket cards show the ID as a badge and status/assignee as pills.
 - Python 3, standard library only if practical. If a ranking library is added, it is pinned in a `requirements.txt`.
 
 ## 9. Test cases
@@ -122,6 +128,7 @@ These expected results must be checked against the real CSV before the demo. If 
 | T7 | Unit | Rendering | at most 3 candidates; fields come from the CSV |
 | T8 | E2E (manual) | AC1–AC5 in the browser | as in §6 |
 | T9 | E2E | LLM unavailable (AC7) | fallback notice and shortlist |
+| T10 | Unit | Fixed notes with `lang="it"`, and with an unknown language | Italian notes; English fallback |
 
 LLM calls are mocked in unit tests. T8 is run live.
 
@@ -145,111 +152,3 @@ Using `resources/issues_export.csv`, with `python chatbot/sip-chatbot-web.py` ru
 
 Must have: CSV load, ID shortcut, keyword shortlist, LLM re-rank with JSON output, status map, formatted top 3 (R1–R7, R10).
 Nice to have: reason text, English-to-Italian expansion, richer HTML rendering.
-
-## 13. Issue categorization (new URL `/categorize`)
-
-OpenSpec change: `openspec/changes/issue-categorization/`.
-
-### 13.1 Goal
-The PM describes a client's problem (Italian, English or mixed). The app suggests the `ISSUETYPE` category under which the new ticket should be created, using similar tickets in `resources/issues_export.csv`.
-
-### 13.2 Approach
-- **URL**: `GET /categorize` (page) and `POST /api/categorize` (`{"prompt": ...}`). `/` and `/api/chat` are unchanged. Same local-only Host/Origin checks (R11).
-- **Load**: additionally keep `ISSUETYPE` per ticket. Codes in the export: 10 (2364), 9 (690), 11 (405), 18 (115), 19 (99), 17 (70), 12/13/16/20 (16 each), 15 (9).
-- **Shortlist**: the existing BM25 shortlist (top 30). No ticket-ID shortcut: IDs are treated as plain text.
-- **Local vote**: score per `ISSUETYPE` = sum of BM25 scores of the shortlisted tickets of that type. The top type is the local suggestion; confidence = its share of the total score.
-- **LLM step**: the prompt has the description and the shortlist (`pkey`, `summary`, `description`, `issuetype`). The LLM replies JSON only: `{"category": "<code or null>", "reason": "..."}`; `null` means nothing is relevant and gives "no category could be suggested". A category not present in the shortlist is dropped and the local suggestion is used.
-- **Render**: label, confidence, up to 2 alternatives and up to 3 example tickets (ID and summary from the CSV, of the suggested type).
-- **Fallback**: LLM failure or invalid output gives the local suggestion with the notice "LLM ranking was unavailable". An empty shortlist gives "no category could be suggested", with no LLM call.
-- **Labels**: `ISSUETYPE_LABELS = {...}` config dict; unknown codes show as `Type <code>`.
-
-### 13.3 Requirements
-
-| ID | Requirement |
-|----|-------------|
-| C1 | `/categorize` shows a form; the PM enters a free-text problem description. |
-| C2 | The response suggests exactly one `ISSUETYPE` category, as a readable label. |
-| C3 | The response includes a one-line reason, a confidence percentage, up to 2 alternatives and up to 3 example tickets. |
-| C4 | Example tickets (ID, summary) come from the CSV and have the suggested `ISSUETYPE`. |
-| C5 | The LLM can only choose a category present in the shortlist. |
-| C6 | If the LLM fails, the local top category is returned with a notice. |
-| C7 | If no ticket shares terms with the description (LLM not called), or the LLM says none is relevant, no category is guessed. |
-| C8 | Only the description and ≤30 tickets (`pkey`, `summary`, trimmed description, `ISSUETYPE`) go to the LLM. |
-| C9 | Italian, English and mixed input are accepted. |
-
-### 13.4 Acceptance criteria
-- **AC-C1** (C2, C3): a description copied from a known ticket returns that ticket's `ISSUETYPE` as the suggestion, with that ticket among the examples.
-- **AC-C2** (C7): `ricetta per la torta di mele` returns "no category could be suggested".
-- **AC-C3** (C6): with the LLM call forced to fail, the local top category is returned with the notice.
-- **AC-C4** (C5): an LLM reply with a category outside the shortlist is ignored.
-- **AC-C5** (C3): no response has more than 1 suggestion, 2 alternatives or 3 examples.
-- **AC-C6** (C4): every displayed example has ID, summary and `ISSUETYPE` equal to its CSV row.
-
-Expected results must be checked against the real CSV before the demo.
-
-### 13.5 Test cases
-
-| # | Type | Input | Expected |
-|---|------|-------|----------|
-| TC1 | Unit | CSV load | `ISSUETYPE` kept for every ticket; no crash on empty or `[NULL]` |
-| TC2 | Unit | Label map, known and unknown code | label, and `Type <code>` |
-| TC3 | Unit | Local vote on a fixed mini index | highest summed score wins; confidence = share |
-| TC4 | Unit | LLM JSON parsing: valid, invalid, category not in shortlist | valid accepted; invalid triggers fallback; foreign category dropped |
-| TC5 | Unit | Empty shortlist | no suggestion; LLM not called |
-| TC6 | Unit | Limits | ≤2 alternatives, ≤3 examples |
-| TC7 | Unit | Prompt content | only allowed fields, ≤30 tickets |
-| TC8 | E2E (manual) | AC-C1, AC-C2 in the browser at `/categorize` | as in §13.4 |
-| TC9 | E2E | LLM unavailable | local suggestion and notice |
-
-### 13.6 Open items and risks
-1. **`ISSUETYPE` decode.** The export has only numeric codes. The PM must confirm the labels for 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20.
-2. **Class imbalance.** Type 10 is ~62% of tickets, so the vote leans towards it. Confidence and alternatives are shown to compensate; no re-weighting in the first slice.
-3. **Lexical shortlist.** Cross-language queries can miss (see §4 and §10). Low confidence is shown.
-4. **Data privacy.** Same open risk as §10.1.
-
-### 13.7 Demo scenario
-With the server running, open `http://localhost:8765/categorize`:
-1. Type a description taken from a known ticket. The suggested category matches that ticket's `ISSUETYPE` (AC-C1).
-2. Type `ricetta per la torta di mele`. The app says no category could be suggested (AC-C2).
-
-
-
-## 14. Expert recommendation (new URL `/recommend`)
-
-OpenSpec change: `openspec/changes/expert-recommendation/`.
-
-### 14.1 Goal
-The PM describes a problem (Italian, English or mixed). The app recommends 2-3 people who can solve it: the `ASSIGNEE` of the most similar tickets in `resources/issues_export.csv`.
-
-### 14.2 Approach
-- **URL**: `GET /recommend` (page) and `POST /api/recommend` (`{"prompt": ...}`). Existing endpoints are unchanged; same Host/Origin checks (R11). Copilot is not needed.
-- **Tickets**: the existing BM25 shortlist, unassigned tickets dropped, top 5 kept. Ticket IDs in the text are plain text.
-- **People**: score per assignee = sum of BM25 scores of their tickets among the 5; top 3 by score (ties by name). Relevance = share of the total score.
-- **Render**: per person, name, relevance %, and the similar tickets (ID, summary from the CSV).
-- **No match**: no shared terms with any assigned ticket gives "No expert could be recommended".
-- **Links**: `/`, `/categorize` and `/recommend` link to each other.
-
-### 14.3 Requirements
-
-| ID | Requirement |
-|----|-------------|
-| E1 | `/recommend` shows a form; the PM enters a free-text problem description. |
-| E2 | The response recommends 2-3 assignees (fewer only if fewer distinct assignees exist among the matched tickets). |
-| E3 | Recommendations are based on the 5 most relevant assigned tickets. |
-| E4 | Each person is shown with a relevance % and the tickets (ID, summary) they handled, from the CSV. |
-| E5 | Unassigned tickets are never used. |
-| E6 | With no relevant ticket, nobody is recommended. |
-| E7 | The data stays local; no LLM call. |
-| E8 | The three pages link to each other. |
-
-### 14.4 Acceptance criteria
-- **AC-E1** (E2, E4): a description copied from a known ticket includes that ticket's assignee, with that ticket listed.
-- **AC-E2** (E6): `ricetta per la torta di mele` recommends nobody.
-- **AC-E3** (E2, E3): no response has more than 3 people or 5 tickets.
-- **AC-E4** (E5): no recommended person is "Unassigned".
-
-### 14.5 Test cases
-Unit tests (`RecommendTests` in `chatbot/test_ticket_lookup.py`): limits and CSV facts; known ticket's assignee recommended; unassigned skipped; no match. Manual: AC-E1, AC-E2 in the browser at `/recommend`, and a link check on the three pages.
-
-### 14.6 Risks
-Lexical shortlist (cross-language misses); assignees may have left the team; frequent assignees can dominate.
