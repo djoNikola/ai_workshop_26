@@ -26,9 +26,15 @@ izbora jezika je menja; izbor se pamti u browseru. Boje su CSS promenljive u `st
 **Privatnost:** upit i najviše 30 isečaka tiketa (ID, naslov, skraćen opis, status, assignee) šalju se Copilot servisu.
 Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stvarne upotrebe (vidi `SPEC.md` §10).
 
-## Testovi
+## Stranice
 
-Kategorizacija: `http://localhost:8765/categorize` predlaže `ISSUETYPE` za novi tiket na osnovu sličnih tiketa (labele u `ISSUETYPE_LABELS` u `ticket_lookup.py`; nepoznati kodovi se prikazuju kao `Type <kod>`). Stranica: `sip-categorize.html`.
+Kategorizacija: `http://localhost:8765/categorize` predlaže `ISSUETYPE` za novi tiket na osnovu sličnih tiketa i Copilot klasifikacije.
+
+Preporuka osoba: `http://localhost:8765/recommend` na osnovu 5 najsličnijih tiketa sa dodeljenim assignee-jem preporučuje do 3 osobe (kolona `ASSIGNEE`). Radi lokalno, bez Copilota.
+
+Sve tri stranice dele chat raspored, navigaciju, EN/IT izbor i light/dark temu.
+
+## Testovi
 
 ```bash
 cd chatbot && python3 -m unittest test_ticket_lookup
@@ -40,8 +46,11 @@ cd chatbot && python3 -m unittest test_ticket_lookup
 - `ticket_lookup.py` – učitavanje CSV-a, pretraga i rangiranje
 - `test_ticket_lookup.py` – unit testovi
 - `sip-chatbot.html` – struktura stranice (HTML); mora biti u istom folderu kao server
+- `sip-categorize.html` – chat za predlog `ISSUETYPE`
+- `sip-recommend.html` – chat za lokalnu preporuku assignee-ja
 - `static/style.css` – stilovi stranice
 - `static/app.js` – logika stranice (chat, setup panel, prevodi EN/IT, promena teme)
+- `static/categorize.js` – chat tok za kategorisanje issue-a
 - `static/theme.js` – primenjuje sačuvanu/sistemsku temu pre iscrtavanja stranice
 - `sip-chatbot.py` – originalna Tkinter verzija (opciono)
 
@@ -94,5 +103,3 @@ Dok Copilot nije spreman, dugme „Send“ je onemogućeno.
 - Server sluša samo na `127.0.0.1`, pa je dostupan samo na tvom računaru.
 - Odbijaju se zahtevi sa stranim `Host` i `Origin` zaglavljem.
 - Svi upiti idu preko Copilot naloga osobe koja je pokrenula server. Nemoj ga izlagati na internet bez prijave korisnika i ograničenja broja zahteva.
-
-Preporuka osoba: `http://localhost:8765/recommend` na osnovu 5 najsličnijih tiketa sa dodeljenim assignee-jem preporučuje 2-3 osobe (kolona `ASSIGNEE`). Radi lokalno, bez Copilota. Stranica: `sip-recommend.html`. Sve tri stranice imaju linkove jedna na drugu.

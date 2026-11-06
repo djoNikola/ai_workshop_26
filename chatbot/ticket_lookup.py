@@ -10,6 +10,8 @@ from pathlib import Path
 CSV_PATH = Path(__file__).resolve().parent.parent / "resources" / "issues_export.csv"
 MAX_RESULTS = 3
 SHORTLIST_SIZE = 30
+RECOMMENDATION_TICKETS = 5
+MAX_EXPERTS = 3
 DESCRIPTION_LIMIT = 500
 ID_RE = re.compile(r"\b([A-Za-z]{2,10}-\d+)\b")
 
@@ -202,6 +204,38 @@ def lookup(query, index, llm):
     if not candidates:
         notes.append("No matching ticket found. Try adding more detail (system, site, error).")
     return {"reply": format_reply(notes, candidates), "candidates": candidates}
+
+
+def recommend(query, index):
+    """Recommend assignees by aggregating BM25 scores from the five closest assigned tickets."""
+    similar = [
+        (ticket, score)
+        for ticket, score in index.shortlist_scored(query)
+        if ticket["assignee"] != "Unassigned"
+    ][:RECOMMENDATION_TICKETS]
+    if not similar:
+        message = "No similar assigned tickets found. Try adding more detail (system, site, error)."
+        return {"reply": message, "notes": [], "experts": []}
+
+    by_assignee = {}
+    for ticket, score in similar:
+        expert = by_assignee.setdefault(ticket["assignee"], {"score": 0.0, "tickets": []})
+        expert["score"] += score
+        expert["tickets"].append({"pkey": ticket["pkey"], "summary": ticket["summary"]})
+
+    total_score = sum(score for _, score in similar)
+    ranked = sorted(by_assignee.items(), key=lambda item: (-item[1]["score"], item[0].casefold()))
+    experts = [
+        {
+            "assignee": assignee,
+            "confidence": round(100 * data["score"] / total_score),
+            "tickets": data["tickets"],
+            "reason": f"Assigned on {len(data['tickets'])} of the {len(similar)} closest tickets.",
+        }
+        for assignee, data in ranked[:MAX_EXPERTS]
+    ]
+    return {"reply": "Recommendations are based on the five closest assigned tickets.",
+            "notes": [], "experts": experts}
 
 
 def category_scores(scored):

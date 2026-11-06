@@ -4,197 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>SIP Ticket Categorization</title>
+<title>Ticket Categorization Miner</title>
 <script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main class="category-main">
-  <header>
-    <h1 data-i18n="title">SIP Ticket Categorization</h1>
+<main>
+  <header class="app-header">
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a class="primary-nav-link" href="/" data-i18n="homeNav">SIP Tickets Miner</a>
+      <a class="primary-nav-link" href="/categorize" data-i18n="categorizeNav" aria-current="page">Ticket Categorization Miner</a>
+      <a class="primary-nav-link" href="/recommend" data-i18n="recommendNav">Expert Recommendation Miner</a>
+    </nav>
+    <h1 class="visually-hidden" data-i18n="pageTitle">Ticket Categorization Miner</h1>
     <div class="tools">
       <button type="button" id="theme" class="icon-btn">
         <svg class="icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
-        <svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l-2.1-2.1" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <div id="lang" role="group" aria-label="Language">
-        <button type="button" data-lang="en" aria-pressed="true" title="English">EN</button>
-        <button type="button" data-lang="it" aria-pressed="false" title="Italiano">IT</button>
+        <button type="button" data-lang="en" aria-pressed="true" title="English"><svg class="flag" viewBox="0 0 60 30" aria-hidden="true"><clipPath id="gb-s"><path d="M0,0v30h60v-30z"/></clipPath><clipPath id="gb-t"><path d="M30,15h30v15zv15h-30zh-30v-15zv-15h30z"/></clipPath><g clip-path="url(#gb-s)"><path d="M0,0v30h60v-30z" fill="#012169"/><path d="M0,0L60,30M60,0L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0L60,30M60,0L0,30" clip-path="url(#gb-t)" stroke="#C8102E" stroke-width="4"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></g></svg>EN</button>
+        <button type="button" data-lang="it" aria-pressed="false" title="Italiano"><svg class="flag" viewBox="0 0 3 2" aria-hidden="true"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#CE2B37"/></svg>IT</button>
       </div>
     </div>
   </header>
-  <nav class="page-nav">
-    <a href="/" data-i18n="lookupLink">Ticket lookup</a>
-    <a href="/recommend" data-i18n="recommendLink">Expert recommendation</a>
-  </nav>
-  <form id="form" class="category-form">
-    <textarea id="entry" autofocus></textarea>
-    <button id="btn" type="submit" disabled></button>
+  <div id="setup" hidden></div>
+  <div id="log"></div>
+  <form id="form">
+    <input id="entry" autocomplete="off" autofocus>
+    <button id="btn" type="submit"></button>
   </form>
-  <div id="notice" role="status" aria-live="polite"></div>
-  <div id="result" aria-live="polite"></div>
 </main>
-<script>
-  const T = {
-    en: {
-      title: "SIP Ticket Categorization",
-      toDark: "Switch to dark theme",
-      toLight: "Switch to light theme",
-      languageLabel: "Language",
-      lookupLink: "Ticket lookup",
-      recommendLink: "Expert recommendation",
-      placeholder: "Describe the client's problem (IT/EN) to find which category the new ticket belongs to...",
-      submit: "Suggest category",
-      suggested: "Suggested category",
-      confidence: "Confidence",
-      alternatives: "Alternatives",
-      similar: "Similar tickets in this category",
-      notReady: "Copilot is not ready. Open the ticket lookup page to install or log in.",
-      serverDown: "Server unavailable.",
-      working: "Working...",
-      noCategory: "No category could be suggested. Try adding more detail (system, site, error).",
-      unavailable: "LLM ranking was unavailable; showing the best keyword match.",
-      error: "Error: ",
-    },
-    it: {
-      title: "Classificazione ticket SIP",
-      toDark: "Passa al tema scuro",
-      toLight: "Passa al tema chiaro",
-      languageLabel: "Lingua",
-      lookupLink: "Ricerca ticket",
-      recommendLink: "Raccomandazione esperto",
-      placeholder: "Descrivi il problema del cliente (IT/EN) per trovare la categoria del nuovo ticket...",
-      submit: "Suggerisci categoria",
-      suggested: "Categoria suggerita",
-      confidence: "Confidenza",
-      alternatives: "Alternative",
-      similar: "Ticket simili in questa categoria",
-      notReady: "Copilot non è pronto. Apri la ricerca ticket per installare o accedere.",
-      serverDown: "Server non disponibile.",
-      working: "Elaborazione...",
-      noCategory: "Nessuna categoria suggerita. Aggiungi dettagli (sistema, sede, errore).",
-      unavailable: "Ranking LLM non disponibile; mostro la migliore corrispondenza per parole chiave.",
-      error: "Errore: ",
-    },
-  };
-  const langButtons = document.querySelectorAll("#lang button");
-  const themeBtn = document.getElementById("theme");
-  let lang = T[localStorage.getItem("lang")] ? localStorage.getItem("lang") : "en";
-  let lastStatus = null;
-  const form = document.getElementById("form");
-  const entry = document.getElementById("entry");
-  const btn = document.getElementById("btn");
-  const notice = document.getElementById("notice");
-  const result = document.getElementById("result");
-  let ready = false;
-  let busy = false;
-  const t = () => T[lang];
-
-  function el(tag, text, cls) {
-    const e = document.createElement(tag);
-    if (text) e.textContent = text;
-    if (cls) e.className = cls;
-    return e;
-  }
-
-  function updateThemeLabel() {
-    const label = document.documentElement.dataset.theme === "dark" ? t().toLight : t().toDark;
-    themeBtn.title = label;
-    themeBtn.setAttribute("aria-label", label);
-  }
-
-  function setLang(next) {
-    lang = next;
-    localStorage.setItem("lang", lang);
-    document.documentElement.lang = lang;
-    document.getElementById("lang").setAttribute("aria-label", t().languageLabel);
-    for (const button of langButtons) button.setAttribute("aria-pressed", String(button.dataset.lang === lang));
-    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t()[node.dataset.i18n];
-    entry.placeholder = t().placeholder;
-    btn.textContent = t().submit;
-    updateThemeLabel();
-    if (lastStatus) renderStatus(lastStatus);
-  }
-
-  function renderStatus(status) {
-    notice.textContent = status.state === "ready" ? "" : t().notReady;
-  }
-
-  themeBtn.addEventListener("click", () => {
-    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem("theme", next);
-    updateThemeLabel();
-  });
-  for (const button of langButtons) button.addEventListener("click", () => setLang(button.dataset.lang));
-
-  async function refresh() {
-    try {
-      const s = await (await fetch("/api/status")).json();
-      lastStatus = s;
-      ready = s.state === "ready";
-      renderStatus(s);
-    } catch (err) {
-      lastStatus = null;
-      ready = false;
-      notice.textContent = t().serverDown;
-    }
-    btn.disabled = busy || !ready;
-  }
-  setLang(lang);
-  refresh();
-  setInterval(refresh, 2000);
-
-  function render(data) {
-    result.replaceChildren();
-    if (!data.category) {
-      const message = (data.reply || "").startsWith("No category could be suggested") ? t().noCategory : data.reply;
-      result.append(el("div", message, "card"));
-      return;
-    }
-    const box = el("div", "", "card");
-    box.append(el("div", t().suggested + ": " + data.category.label, "category-label"),
-               el("div", t().confidence + ": " + data.category.confidence + "%", "pill category-meta"));
-    if (data.category.reason) box.append(el("div", data.category.reason, "why"));
-    if ((data.reply || "").startsWith("LLM ranking")) box.append(el("div", t().unavailable, "why"));
-    if (data.alternatives.length) {
-      box.append(el("div", t().alternatives + ": " + data.alternatives.map(a => a.label + " (" + a.confidence + "%)").join(", "), "category-alternatives"));
-    }
-    result.append(box);
-    if (data.examples.length) {
-      const ex = el("div", "", "card category-examples");
-      ex.append(el("div", t().similar, "suggestion-label"));
-      for (const t of data.examples) {
-        const row = el("div", "", "category-example");
-        row.append(el("b", t.pkey), " - " + t.summary);
-        ex.append(row);
-      }
-      result.append(ex);
-    }
-  }
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const prompt = entry.value.trim();
-    if (!prompt || !ready || busy) return;
-    busy = true;
-    btn.disabled = true;
-    result.replaceChildren(el("div", t().working, "card"));
-    try {
-      const r = await fetch("/api/categorize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
-      render(data);
-    } catch (err) {
-      result.replaceChildren(el("div", t().error + err.message, "card error"));
-    }
-    busy = false;
-    btn.disabled = !ready;
-  });
-</script>
+<script src="/static/categorize.js"></script>
 </body>
 </html>

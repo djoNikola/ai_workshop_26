@@ -124,6 +124,41 @@ class LookupTests(unittest.TestCase):
             self.assertEqual((c["summary"], c["status"], c["assignee"]), (t["summary"], t["status"], t["assignee"]))
 
 
+class RecommendTests(unittest.TestCase):
+    class ScoredIndex:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def shortlist_scored(self, query):
+            return self.rows
+
+    @staticmethod
+    def ticket(pkey, assignee):
+        return {"pkey": pkey, "summary": "sample ticket", "assignee": assignee}
+
+    def test_aggregates_top_five_assigned_tickets(self):
+        rows = [
+            (self.ticket("X-0", "Unassigned"), 20.0),
+            (self.ticket("X-1", "ana"), 5.0),
+            (self.ticket("X-2", "bob"), 3.0),
+            (self.ticket("X-3", "ana"), 2.0),
+            (self.ticket("X-4", "bob"), 1.0),
+            (self.ticket("X-5", "carol"), 0.5),
+            (self.ticket("X-6", "dave"), 0.1),
+        ]
+        result = tl.recommend("sample", self.ScoredIndex(rows))
+        self.assertEqual([x["assignee"] for x in result["experts"]], ["ana", "bob", "carol"])
+        self.assertEqual([x["pkey"] for x in result["experts"][0]["tickets"]], ["X-1", "X-3"])
+        self.assertEqual([x["pkey"] for x in result["experts"][2]["tickets"]], ["X-5"])
+        self.assertEqual(len(result["experts"]), tl.MAX_EXPERTS)
+
+    def test_no_assigned_matches_returns_empty_experts(self):
+        index = self.ScoredIndex([(self.ticket("X-1", "Unassigned"), 1.0)])
+        result = tl.recommend("sample", index)
+        self.assertEqual(result["experts"], [])
+        self.assertIn("No similar assigned tickets", result["reply"])
+
+
 class CategorizeTests(unittest.TestCase):
     QUERY = "servizio per pannellini e stampanti preanalitica"
 

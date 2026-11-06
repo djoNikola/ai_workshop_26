@@ -13,9 +13,11 @@ import ticket_lookup
 HOST, PORT = "127.0.0.1", 8765
 INDEX = Path(__file__).with_name("sip-chatbot.html")
 CATEGORIZE_PAGE = Path(__file__).with_name("sip-categorize.html")
+RECOMMEND_PAGE = Path(__file__).with_name("sip-recommend.html")
 STATIC_DIR = Path(__file__).with_name("static")
 STATIC_FILES = {
     "/static/app.js": "text/javascript; charset=utf-8",
+    "/static/categorize.js": "text/javascript; charset=utf-8",
     "/static/style.css": "text/css; charset=utf-8",
     "/static/theme.js": "text/javascript; charset=utf-8",
 }
@@ -205,6 +207,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, INDEX.read_text(encoding="utf-8"), "text/html; charset=utf-8")
         if self.path == "/categorize":
             return self._send(200, CATEGORIZE_PAGE.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+        if self.path == "/recommend":
+            return self._send(200, RECOMMEND_PAGE.read_text(encoding="utf-8"), "text/html; charset=utf-8")
         if self.path in STATIC_FILES:
             name = self.path.rsplit("/", 1)[1]
             return self._send(200, (STATIC_DIR / name).read_text(encoding="utf-8"), STATIC_FILES[self.path])
@@ -224,9 +228,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/login":
             start_login()
             return self._send(200, json.dumps(get_status()))
-        if self.path not in ("/api/chat", "/api/categorize"):
+        if self.path not in ("/api/chat", "/api/categorize", "/api/recommend"):
             return self._send(404, "{}")
-        if get_status()["state"] != "ready":
+        if self.path != "/api/recommend" and get_status()["state"] != "ready":
             return self._send(409, json.dumps({"reply": "Copilot nije spreman (instalacija ili prijava)."}))
         try:
             length = int(self.headers.get("Content-Length", 0))
@@ -236,8 +240,11 @@ class Handler(BaseHTTPRequestHandler):
         if not prompt:
             return self._send(400, "{}")
         try:
-            handler = ticket_lookup.categorize if self.path == "/api/categorize" else ticket_lookup.lookup
-            result = handler(prompt, load_index(), run_copilot)
+            if self.path == "/api/recommend":
+                result = ticket_lookup.recommend(prompt, load_index())
+            else:
+                handler = ticket_lookup.categorize if self.path == "/api/categorize" else ticket_lookup.lookup
+                result = handler(prompt, load_index(), run_copilot)
         except Exception as e:
             return self._send(500, json.dumps({"reply": f"Greška: {e}"}))
         self._send(200, json.dumps(result))

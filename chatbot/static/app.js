@@ -11,7 +11,10 @@ const T = {
     error: "Error: ",
     status: "Status",
     assignee: "Assignee",
-    categorizeLink: "Ticket categorization",
+    pageTitle: "SIP Tickets Miner",
+    homeNav: "SIP Tickets Miner",
+    categorizeNav: "Ticket Categorization Miner",
+    recommendNav: "Expert Recommendation Miner",
     notes: {
       exact: "Exact ticket ID match.",
       unavailable: "LLM ranking was unavailable; showing the best keyword matches.",
@@ -47,7 +50,10 @@ const T = {
     error: "Errore: ",
     status: "Stato",
     assignee: "Assegnatario",
-    categorizeLink: "Classificazione ticket",
+    pageTitle: "Miner ticket SIP",
+    homeNav: "Miner ticket SIP",
+    categorizeNav: "Miner classificazione ticket",
+    recommendNav: "Miner raccomandazione esperti",
     notes: {
       exact: "Corrispondenza esatta con l'ID del ticket.",
       unavailable: "Il ranking LLM non è disponibile; vengono mostrate le migliori corrispondenze per parole chiave.",

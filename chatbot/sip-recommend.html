@@ -3,90 +3,192 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SIP Expert Recommendation</title>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; display: flex; justify-content: center; font-family: system-ui, sans-serif; background: #f3f4f6; }
-  main { width: 100%; max-width: 900px; padding: 12px; }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  a { color: #2563eb; }
-  textarea { width: 100%; min-height: 110px; padding: 10px; font: 15px system-ui, sans-serif; border: 1px solid #d1d5db; border-radius: 8px; }
-  button { margin-top: 8px; padding: 10px 18px; font-size: 15px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
-  button:disabled { background: #9ca3af; cursor: default; }
-  #result { margin-top: 12px; }
-  .box { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-  .who { font-size: 18px; font-weight: 600; color: #059669; }
-  .meta { font-size: 13px; color: #374151; margin-top: 4px; }
-  .ex { margin-top: 6px; } .ex b { color: #1d4ed8; }
-  .err { color: #b91c1c; }
-</style>
+<meta name="color-scheme" content="light dark">
+<title>Expert Recommendation Miner</title>
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <main>
-  <h1>SIP Expert Recommendation</h1>
-  <p><a href="/">Ticket lookup</a> | <a href="/categorize">Ticket categorization</a></p>
+  <header class="app-header">
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a class="primary-nav-link" href="/" data-i18n="homeNav">SIP Tickets Miner</a>
+      <a class="primary-nav-link" href="/categorize" data-i18n="categorizeNav">Ticket Categorization Miner</a>
+      <a class="primary-nav-link" href="/recommend" data-i18n="recommendNav" aria-current="page">Expert Recommendation Miner</a>
+    </nav>
+    <h1 class="visually-hidden" data-i18n="pageTitle">Expert Recommendation Miner</h1>
+    <div class="tools">
+      <button type="button" id="theme" class="icon-btn">
+        <svg class="icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
+        <svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l-2.1-2.1" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div id="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true" title="English"><svg class="flag" viewBox="0 0 60 30" aria-hidden="true"><clipPath id="gb-s"><path d="M0,0v30h60v-30z"/></clipPath><clipPath id="gb-t"><path d="M30,15h30v15zv15h-30zh-30v-15zv-15h30z"/></clipPath><g clip-path="url(#gb-s)"><path d="M0,0v30h60v-30z" fill="#012169"/><path d="M0,0L60,30M60,0L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0L60,30M60,0L0,30" clip-path="url(#gb-t)" stroke="#C8102E" stroke-width="4"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></g></svg>EN</button>
+        <button type="button" data-lang="it" aria-pressed="false" title="Italiano"><svg class="flag" viewBox="0 0 3 2" aria-hidden="true"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#CE2B37"/></svg>IT</button>
+      </div>
+    </div>
+  </header>
+  <div id="log" aria-live="polite" aria-relevant="additions"></div>
   <form id="form">
-    <textarea id="entry" placeholder="Describe the problem (IT/EN) to find who solved similar tickets..." autofocus></textarea>
-    <button id="btn" type="submit">Recommend experts</button>
+    <input id="entry" autocomplete="off" autofocus>
+    <button id="btn" type="submit"></button>
   </form>
-  <div id="result"></div>
 </main>
 <script>
+  const T = {
+    en: {
+      pageTitle: "Expert Recommendation Miner",
+      homeNav: "SIP Tickets Miner",
+      categorizeNav: "Ticket Categorization Miner",
+      recommendNav: "Expert Recommendation Miner",
+      toDark: "Switch to dark theme",
+      toLight: "Switch to light theme",
+      languageLabel: "Language",
+      placeholder: "Describe the problem (IT/EN) to find who solved similar tickets...",
+      send: "Send",
+      you: "You",
+      bot: "Miner",
+      working: "Searching for experts...",
+      noExperts: "No similar assigned tickets found. Try adding more detail (system, site, error).",
+      relevance: "Relevance",
+      solved: count => "solved " + count + " similar ticket(s)",
+      assigned: (count, total) => "Assigned on " + count + " of the " + total + " closest tickets.",
+      error: "Error: ",
+    },
+    it: {
+      pageTitle: "Miner raccomandazione esperti",
+      homeNav: "Miner ticket SIP",
+      categorizeNav: "Miner classificazione ticket",
+      recommendNav: "Miner raccomandazione esperti",
+      toDark: "Passa al tema scuro",
+      toLight: "Passa al tema chiaro",
+      languageLabel: "Lingua",
+      placeholder: "Descrivi il problema (IT/EN) per trovare chi ha risolto ticket simili...",
+      send: "Invia",
+      you: "Tu",
+      bot: "Miner",
+      working: "Ricerca degli esperti...",
+      noExperts: "Nessun ticket assegnato simile trovato. Aggiungi dettagli (sistema, sede, errore).",
+      relevance: "Rilevanza",
+      solved: count => "ticket simili risolti: " + count,
+      assigned: (count, total) => "Assegnato su " + count + " dei " + total + " ticket più simili.",
+      error: "Errore: ",
+    },
+  };
   const form = document.getElementById("form");
   const entry = document.getElementById("entry");
   const btn = document.getElementById("btn");
-  const result = document.getElementById("result");
+  const log = document.getElementById("log");
+  const langButtons = document.querySelectorAll("#lang button");
+  const themeBtn = document.getElementById("theme");
+  const HELMET_SVG =
+    '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path class="beam" d="M12 7V4.2M8.2 7.8 6.6 5.7M15.8 7.8l1.6-2.1"/>' +
+    '<path class="shell" d="M5 16.5a7 7 0 0 1 14 0z"/>' +
+    '<rect class="shell" x="2.5" y="16.5" width="19" height="2.8" rx="1.4"/>' +
+    '<circle class="lamp" cx="12" cy="12.6" r="2.5"/></svg>';
+  let lang = T[localStorage.getItem("lang")] ? localStorage.getItem("lang") : "en";
   let busy = false;
+  const t = () => T[lang];
 
   function el(tag, text, cls) {
-    const e = document.createElement(tag);
-    if (text) e.textContent = text;
-    if (cls) e.className = cls;
-    return e;
+    const element = document.createElement(tag);
+    if (text) element.textContent = text;
+    if (cls) element.className = cls;
+    return element;
   }
 
-  function render(data) {
-    result.replaceChildren();
-    if (!data.experts.length) {
-      result.append(el("div", data.reply, "box"));
+  function setLang(next) {
+    lang = next;
+    localStorage.setItem("lang", lang);
+    document.documentElement.lang = lang;
+    document.getElementById("lang").setAttribute("aria-label", t().languageLabel);
+    for (const button of langButtons) button.setAttribute("aria-pressed", String(button.dataset.lang === lang));
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t()[node.dataset.i18n];
+    entry.placeholder = t().placeholder;
+    btn.textContent = t().send;
+    updateThemeLabel();
+  }
+
+  function updateThemeLabel() {
+    const label = document.documentElement.dataset.theme === "dark" ? t().toLight : t().toDark;
+    themeBtn.title = label;
+    themeBtn.setAttribute("aria-label", label);
+  }
+
+  function addMessage(role, text) {
+    const message = el("div", "", "msg " + role);
+    const author = el("div", "", "who");
+    if (role === "bot") {
+      const avatar = el("span", "", "avatar");
+      avatar.innerHTML = HELMET_SVG;
+      author.append(avatar);
+    }
+    author.append(t()[role === "user" ? "you" : "bot"]);
+    const content = el("div", text, "text");
+    message.append(author, content);
+    log.append(message);
+    log.scrollTop = log.scrollHeight;
+    return content;
+  }
+
+  function renderRecommendation(output, data) {
+    output.replaceChildren();
+    if (!Array.isArray(data.experts) || !data.experts.length) {
+      output.append(el("div", t().noExperts, "note"));
       return;
     }
-    for (const n of data.notes || []) result.append(el("div", n, "box"));
-    for (const x of data.experts) {
-      const box = el("div", "", "box");
-      box.append(el("div", x.assignee, "who"),
-                 el("div", "Relevance: " + x.confidence + "% - solved " + x.tickets.length + " similar ticket(s)", "meta"));
-      if (x.reason) box.append(el("div", x.reason, "meta"));
-      for (const t of x.tickets) {
-        const row = el("div", "", "ex");
-        row.append(el("b", t.pkey), " - " + t.summary);
-        box.append(row);
+    for (const note of data.notes || []) output.append(el("div", note, "note"));
+    for (const expert of data.experts) {
+      const card = el("div", "", "card expert-card");
+      card.append(
+        el("div", expert.assignee, "expert-name"),
+        el("div", t().relevance + ": " + expert.confidence + "% · " + t().solved(expert.tickets.length), "pill expert-meta"),
+        el("div", t().assigned(expert.tickets.length, 5), "expert-reason"),
+      );
+      for (const ticket of expert.tickets) {
+        const evidence = el("div", "", "expert-ticket");
+        evidence.append(el("strong", ticket.pkey), " - " + ticket.summary);
+        card.append(evidence);
       }
-      result.append(box);
+      output.append(card);
     }
   }
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("theme", next);
+    updateThemeLabel();
+  });
+  for (const button of langButtons) button.addEventListener("click", () => setLang(button.dataset.lang));
+  setLang(lang);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
     const prompt = entry.value.trim();
     if (!prompt || busy) return;
+    entry.value = "";
+    addMessage("user", prompt);
+    const output = addMessage("bot", t().working);
     busy = true;
     btn.disabled = true;
-    result.replaceChildren(el("div", "Working...", "box"));
     try {
-      const r = await fetch("/api/recommend", {
+      const response = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
-      render(data);
-    } catch (err) {
-      result.replaceChildren(el("div", "Error: " + err.message, "box err"));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.reply || "HTTP " + response.status);
+      renderRecommendation(output, data);
+    } catch (error) {
+      output.textContent = t().error + error.message;
     }
     busy = false;
     btn.disabled = false;
+    entry.focus();
+    log.scrollTop = log.scrollHeight;
   });
 </script>
 </body>
