@@ -1,11 +1,14 @@
 """Ticket lookup: ID shortcut, local keyword shortlist, LLM re-rank (see openspec change ticket-lookup-chatbot)."""
 import csv
 import json
+import logging
 import math
 import re
 import unicodedata
 from collections import Counter
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 CSV_PATH = Path(__file__).resolve().parent.parent / "resources" / "issues_export.csv"
 MAX_RESULTS = 3
@@ -200,6 +203,7 @@ def lookup(query, index, llm, lang=DEFAULT_LANG):
             ranked = parse_llm_results(llm(build_prompt(text.strip(), shortlist)), shortlist)
             candidates += [_candidate(index.tickets[p], r) for p, r in ranked[:room]]
         except Exception:
+            logger.exception("LLM ranking failed; falling back to keyword matches")
             notes.append(msg["llm_unavailable"])
             candidates += [_candidate(t, "") for t in shortlist[:room]]
 

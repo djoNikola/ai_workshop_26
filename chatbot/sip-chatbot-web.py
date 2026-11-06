@@ -186,8 +186,8 @@ def get_status():
 def run_copilot(prompt):
     """Single independent call (no --continue); raises on failure so lookup() can fall back."""
     with lock:
-        proc = subprocess.run([COPILOT, "-p", prompt], capture_output=True, text=True,
-                              encoding="utf-8", timeout=LLM_TIMEOUT)
+        proc = subprocess.run([COPILOT, "--silent"], input=prompt, capture_output=True,
+                              text=True, encoding="utf-8", timeout=LLM_TIMEOUT)
     if proc.returncode != 0 or not proc.stdout.strip():
         raise RuntimeError(proc.stderr.strip() or "empty reply")
     return proc.stdout
