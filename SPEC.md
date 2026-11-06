@@ -9,13 +9,14 @@ The PM types a free-text description of a client's issue, in Italian or English.
 ## 2. Scope
 
 **In scope**
-- Single-user local web chat, based on the existing `chatbot/sip-chatbot-web.py` and `sip-chatbot.html`.
+- Single-user local web chat named **SIP Tickets Miner** (the bot is "Miner"), based on the existing `chatbot/sip-chatbot-web.py` and `sip-chatbot.html`.
+- UI in English (default) or Italian, switchable in the page (EN/IT, choice saved in `localStorage`), and light/dark themes (first visit follows the system theme, choice saved).
 - Ticket data: `resources/issues_export.csv`, used for both development and the demo.
 - LLM-based matching of a free-text description to tickets.
 - Issue type suggestion using the distinct `ISSUETYPE` values found in the CSV.
 - Assignee suggestions derived from LLM-ranked similar tickets, with supporting ticket IDs.
 - Ticket-ID detection in the input, with fallback to text search when the ID does not exist.
-- Italian and English input; replies in the language of the question.
+- Italian and English input. The LLM's match reason is in the language of the question; the fixed chat notes (not found, no match, LLM unavailable, exact ID match) follow the UI language.
 
 **Out of scope**
 - Live connection to the ticketing system.
@@ -72,8 +73,11 @@ Result limit: at most 3 candidates in total, with ID-matched tickets first.
 | R10 | If the LLM call fails or returns invalid JSON, the chat shows the local shortlist top 3 and a notice that LLM ranking was unavailable. |
 | R11 | The server runs locally, binds only to `127.0.0.1` and keeps the existing Host/Origin checks. |
 | R12 | Responses arrive within ~30 s (the Copilot CLI call dominates). |
-| R13 | For a description lookup, the suggested issue type is either one of the distinct non-empty CSV `ISSUETYPE` values or absent. |
-| R14 | Assignee suggestions come only from ranked tickets, include supporting ticket IDs, and never modify historical assignee fields or assign a ticket. |
+| R13 | The UI is English by default with an EN/IT switch; the choice persists. Fixed chat notes follow the selected language, and unknown `lang` values fall back to English. |
+| R14 | The UI offers light and dark themes, following the system theme on first visit and persisting the user's choice. |
+| R15 | The server serves only the whitelisted static files; any other `/static` path returns 404. |
+| R16 | For a description lookup, the suggested issue type is either one of the distinct non-empty CSV `ISSUETYPE` values or absent. |
+| R17 | Assignee suggestions come only from ranked tickets, include supporting ticket IDs, and never modify historical assignee fields or assign a ticket. |
 
 ## 6. Acceptance criteria
 
@@ -85,8 +89,8 @@ Result limit: at most 3 candidates in total, with ID-matched tickets first.
 - **AC6** (R7): for every displayed candidate, ID, status and assignee exactly equal the CSV row.
 - **AC7** (R10): with the LLM call forced to fail, the shortlist top 3 is returned with the fallback notice.
 - **AC8** (R3): no response contains more than 3 candidates.
-- **AC9** (R13): an issue type outside the CSV taxonomy is ignored; the type shown for a candidate is exactly the CSV value.
-- **AC10** (R14): every suggested assignee is assigned on at least one ranked ticket and includes that ticket ID as evidence; LLM fallback shows no suggestions.
+- **AC9** (R16): an issue type outside the CSV taxonomy is ignored; the type shown for a candidate is exactly the CSV value.
+- **AC10** (R17): every suggested assignee is assigned on at least one ranked ticket and includes that ticket ID as evidence; LLM fallback shows no suggestions.
 
 These expected results must be checked against the real CSV before the demo. If a ranking differs, adjust the query or the expected ticket, not the criteria.
 
@@ -114,7 +118,10 @@ These expected results must be checked against the real CSV before the demo. If 
 
 - Copilot CLI (`copilot -p`) is installed and logged in, as already handled by `sip-chatbot-web.py`.
 - Change `run_copilot` so that each lookup is independent (no `--continue`) and the prompt requests JSON-only output.
-- New endpoint behaviour: `/api/chat` keeps its URL and `{"reply": ...}` shape; the reply becomes the formatted candidate list. `sip-chatbot.html` may need light changes for rendering (a list or table per candidate).
+- New endpoint behaviour: `/api/chat` keeps its URL; the reply becomes the formatted candidate list. The request body is `{"prompt": ..., "lang": "en"|"it"}`; an unknown or missing `lang` falls back to `en`. `ticket_lookup.lookup()` returns its fixed notes (`MESSAGES`) in that language. Errors return an `error` key (`not_ready`, `generic`) plus `reply`.
+- Setup/login failures are reported as keys (`SetupError`: `npm_missing`, `install_failed`, `not_in_path`, `login_failed`) that the page translates.
+- Front end is split into `sip-chatbot.html` (structure), `static/style.css` (CSS variables for light/dark themes), `static/app.js` (chat, setup panel, EN/IT texts, theme toggle) and `static/theme.js` (loaded in `<head>` to apply the theme before first render). The server serves only the files listed in `STATIC_FILES`; any other `/static` path returns 404.
+- UI: user messages on the right, Miner's on the left (mining-helmet avatar); ticket cards show the ID as a badge and status/assignee as pills.
 - Python 3, standard library only if practical. If a ranking library is added, it is pinned in a `requirements.txt`.
 
 ## 9. Test cases
@@ -130,6 +137,7 @@ These expected results must be checked against the real CSV before the demo. If 
 | T7 | Unit | Rendering | at most 3 candidates; fields come from the CSV |
 | T8 | E2E (manual) | AC1–AC5 in the browser | as in §6 |
 | T9 | E2E | LLM unavailable (AC7) | fallback notice and shortlist |
+| T10 | Unit | Fixed notes with `lang="it"`, and with an unknown language | Italian notes; English fallback |
 
 LLM calls are mocked in unit tests. T8 is run live.
 
