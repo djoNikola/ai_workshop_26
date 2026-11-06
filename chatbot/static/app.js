@@ -10,6 +10,10 @@ const T = {
     error: "Error: ",
     status: "Status",
     assignee: "Assignee",
+    issueType: "Issue type",
+    suggestedIssueType: "Suggested issue type",
+    suggestedAssignees: "Suggested assignees",
+    basedOn: "based on",
     noCopilot: cmd => "Copilot CLI is not installed. Install it with: " + cmd + " ?",
     noNpm: "npm was not found. Install Node.js first (https://nodejs.org).",
     install: "Yes, install",
@@ -39,6 +43,10 @@ const T = {
     error: "Errore: ",
     status: "Stato",
     assignee: "Assegnatario",
+    issueType: "Tipo di issue",
+    suggestedIssueType: "Tipo di issue suggerito",
+    suggestedAssignees: "Assegnatari suggeriti",
+    basedOn: "in base a",
     noCopilot: cmd => "Copilot CLI non è installato. Vuoi installarlo con: " + cmd + " ?",
     noNpm: "npm non trovato. Installa prima Node.js (https://nodejs.org).",
     install: "Sì, installa",
@@ -207,6 +215,20 @@ function renderReply(out, data) {
   out.replaceChildren();
   const notes = (data.reply || "").split("\n").filter(l => !/^\s*\d+\. |^\s{3}/.test(l));
   for (const n of notes) if (n.trim()) out.append(el("div", n, "note"));
+  if (data.suggested_issue_type || data.assignee_suggestions?.length) {
+    const suggestions = el("div", "", "suggestions");
+    if (data.suggested_issue_type) {
+      suggestions.append(el("div", t().suggestedIssueType + ": " + data.suggested_issue_type, "suggestion"));
+      if (data.issue_type_reason) suggestions.append(el("div", data.issue_type_reason, "why"));
+    }
+    if (data.assignee_suggestions?.length) {
+      suggestions.append(el("div", t().suggestedAssignees, "suggestion-label"));
+      for (const suggestion of data.assignee_suggestions) {
+        suggestions.append(el("div", suggestion.assignee + " (" + t().basedOn + " " + suggestion.evidence.join(", ") + ")", "suggestion"));
+      }
+    }
+    out.append(suggestions);
+  }
   for (const c of data.candidates) {
     const card = el("div", "", "card");
     const head = el("div", "", "head");
@@ -214,6 +236,7 @@ function renderReply(out, data) {
     const meta = el("div", "", "meta");
     meta.append(el("span", t().status + ": " + c.status, "pill"),
                 el("span", t().assignee + ": " + c.assignee, "pill"));
+    if (c.issuetype) meta.append(el("span", t().issueType + ": " + c.issuetype, "pill"));
     card.append(head, meta);
     if (c.reason) card.append(el("div", c.reason, "why"));
     out.append(card);

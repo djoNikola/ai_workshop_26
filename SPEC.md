@@ -4,7 +4,7 @@ Source: `resources/problem_brief.md`. Phase I PoC.
 
 ## 1. Goal
 
-The PM types a free-text description of a client's issue, in Italian or English. The chatbot returns up to 3 candidate SIP tickets, each with **task ID, short summary, status and assignee**. This replaces manual scanning of the CSV export.
+The PM types a free-text description of a client's issue, in Italian or English. The chatbot returns up to 3 candidate SIP tickets, each with **task ID, short summary, status, historical assignee and issue type**. For a description lookup, it also suggests an issue type from the CSV taxonomy and possible assignees supported by similar tickets. This replaces manual scanning of the CSV export.
 
 ## 2. Scope
 
@@ -12,6 +12,8 @@ The PM types a free-text description of a client's issue, in Italian or English.
 - Single-user local web chat, based on the existing `chatbot/sip-chatbot-web.py` and `sip-chatbot.html`.
 - Ticket data: `resources/issues_export.csv`, used for both development and the demo.
 - LLM-based matching of a free-text description to tickets.
+- Issue type suggestion using the distinct `ISSUETYPE` values found in the CSV.
+- Assignee suggestions derived from LLM-ranked similar tickets, with supporting ticket IDs.
 - Ticket-ID detection in the input, with fallback to text search when the ID does not exist.
 - Italian and English input; replies in the language of the question.
 
@@ -30,23 +32,25 @@ The PM types a free-text description of a client's issue, in Italian or English.
    - If the ID exists, that ticket is returned first (exact match).
    - If it does not exist, the chat says so and continues with step 4.
 4. The system shortlists tickets, and the LLM ranks the shortlist against the description.
-5. The chat shows up to 3 candidates, best first, each with ID, summary, status, assignee and a short reason for the match.
-6. If nothing is relevant, the chat says "no matching ticket found" and suggests adding detail. It does not invent a ticket.
+5. The chat shows up to 3 candidates, best first, each with ID, summary, status, historical assignee, issue type and a short reason for the match.
+6. For description lookups, the chat shows a suggested issue type and possible assignees supported by the ranked ticket IDs. These are recommendations only; the chatbot does not assign or update tickets.
+7. If nothing is relevant, the chat says "no matching ticket found" and suggests adding detail. It does not invent a ticket.
 
 ## 4. Matching approach (decision)
 
 **Hybrid: local shortlist, then LLM re-rank.** The CSV has ~3,800 tickets with long descriptions, which is too large to send in one prompt.
 
 0. **ID shortcut**: a ticket ID in the message (`[A-Za-z]{2,10}-\d+`, case-insensitive) is looked up directly. An existing ticket is listed first. A missing ID adds a "not found" note, and the message with the ID removed continues to step 2. If only an existing ID was given, steps 2–3 are skipped.
-1. **Load**: parse the CSV once at server start, keeping `PKEY, SUMMARY, DESCRIPTION, ISSUESTATUS, ASSIGNEE`. Trim descriptions to 500 characters. `[NULL]` values become empty.
+1. **Load**: parse the CSV once at server start, keeping `PKEY, SUMMARY, DESCRIPTION, ISSUESTATUS, ASSIGNEE, ISSUETYPE`. Trim descriptions to 500 characters. `[NULL]` values become empty. The distinct non-empty issue type values form the allowed classification set.
 2. **Shortlist** (local, no LLM): BM25 ranking (k1 = 1.5, b = 0.75, stdlib only) over SUMMARY + DESCRIPTION, keeping the top 30.
    - Text is lowercased and accents removed. Tokens of 2 characters or fewer and common Italian/English stopwords are dropped.
    - Each token is cut to its first 5 characters as a crude stem, so "consegna", "consegnati" and "consegnare" match.
    - SUMMARY counts twice, so it weighs more than DESCRIPTION.
    - Tickets sharing no token with the query are never shortlisted. An empty shortlist means "no match" without calling the LLM.
-3. **Re-rank** (LLM via the existing Copilot CLI call, one independent `copilot -p` call per query, 120 s timeout): the prompt contains the PM's query and the shortlist (`pkey`, `summary`, `description`, `status`, `assignee`). The LLM must reply with JSON only: up to 3 `{pkey, reason}` items, or an empty list. The reply is parsed leniently (first valid JSON object in the output). IDs not in the shortlist are dropped.
-4. **Render**: the server looks up ID, summary, status and assignee from the loaded data by `pkey`, not from LLM text. This stops the LLM from altering factual fields.
-5. **Fallback**: if the LLM call fails or returns unusable output, show the top 3 shortlist tickets (without a reason) and a notice that LLM ranking was unavailable. If the LLM returns an empty list, answer "no match".
+3. **Re-rank and classify** (LLM via the existing Copilot CLI call, one independent `copilot -p` call per query, 120 s timeout): the prompt contains the PM's query, all allowed issue type values and the shortlist (`pkey`, `summary`, `description`, `status`, `assignee`, `issuetype`). The LLM must reply with JSON only: up to 3 `{pkey, reason}` items, an issue type value or `null`, and a short classification reason. The reply is parsed leniently (first valid JSON object in the output). IDs not in the shortlist and issue types outside the CSV value set are dropped.
+4. **Suggest assignees**: return distinct, assigned users from the LLM-ranked tickets, in rank order, with the supporting ticket IDs. This export has no component-to-owner mapping, so this version does not claim to use system ownership.
+5. **Render**: the server looks up ID, summary, status, historical assignee and issue type from the loaded data by `pkey`, not from LLM text. This stops the LLM from altering factual fields.
+6. **Fallback**: if the LLM call fails or returns unusable output, show the top 3 shortlist tickets (without a reason) and a notice that LLM ranking was unavailable. Do not produce issue type or assignee suggestions in fallback. If the LLM returns an empty list, answer "no match".
 
 Result limit: at most 3 candidates in total, with ID-matched tickets first.
 
@@ -58,7 +62,7 @@ Result limit: at most 3 candidates in total, with ID-matched tickets first.
 |----|-------------|
 | R1 | The PM can enter a free-text query in a web chat and get a response. |
 | R2 | The query may be Italian, English or mixed. |
-| R3 | The response lists at most 3 candidates. Each has task ID (`PKEY`), summary, status, assignee and a one-line match reason. |
+| R3 | The response lists at most 3 candidates. Each has task ID (`PKEY`), summary, status, historical assignee, issue type and a one-line match reason. |
 | R4 | If the query contains an existing ticket ID, that ticket is listed first. |
 | R5 | If the query contains a non-existent ticket ID, the response says it was not found and still runs text search on the remaining text. |
 | R6 | If no candidate is relevant, the response says no match was found. It must not return unrelated tickets. |
@@ -68,6 +72,8 @@ Result limit: at most 3 candidates in total, with ID-matched tickets first.
 | R10 | If the LLM call fails or returns invalid JSON, the chat shows the local shortlist top 3 and a notice that LLM ranking was unavailable. |
 | R11 | The server runs locally, binds only to `127.0.0.1` and keeps the existing Host/Origin checks. |
 | R12 | Responses arrive within ~30 s (the Copilot CLI call dominates). |
+| R13 | For a description lookup, the suggested issue type is either one of the distinct non-empty CSV `ISSUETYPE` values or absent. |
+| R14 | Assignee suggestions come only from ranked tickets, include supporting ticket IDs, and never modify historical assignee fields or assign a ticket. |
 
 ## 6. Acceptance criteria
 
@@ -79,6 +85,8 @@ Result limit: at most 3 candidates in total, with ID-matched tickets first.
 - **AC6** (R7): for every displayed candidate, ID, status and assignee exactly equal the CSV row.
 - **AC7** (R10): with the LLM call forced to fail, the shortlist top 3 is returned with the fallback notice.
 - **AC8** (R3): no response contains more than 3 candidates.
+- **AC9** (R13): an issue type outside the CSV taxonomy is ignored; the type shown for a candidate is exactly the CSV value.
+- **AC10** (R14): every suggested assignee is assigned on at least one ranked ticket and includes that ticket ID as evidence; LLM fallback shows no suggestions.
 
 These expected results must be checked against the real CSV before the demo. If a ranking differs, adjust the query or the expected ticket, not the criteria.
 
@@ -93,12 +101,13 @@ These expected results must be checked against the real CSV before the demo. If 
 | `DESCRIPTION` | Matching (trimmed) |
 | `ISSUESTATUS` | Status shown to PM, via a status map |
 | `ASSIGNEE` | Assignee shown to PM |
+| `ISSUETYPE` | Historical issue type and allowed values for classification |
 
 **Status map**: `ISSUESTATUS` is a numeric code with no decode table in the export. Add a small config dict in the server (`STATUS_LABELS = {...}`). Unknown codes display as `Status <code>`. The real labels for the top codes (6, 10008, 1, 10001, 10002) must be confirmed by the PM (**open item**).
 
 **Data boundaries**
-- Only the 5 fields above leave the CSV loader. Other columns (reporter, environment, etc.) are never sent to the LLM.
-- Only the query and the shortlist (≤30 tickets) are included in an LLM prompt; the full CSV is never sent.
+- Only the fields above leave the CSV loader. Other columns (reporter, environment, etc.) are never sent to the LLM.
+- Only the query, distinct issue type values, and shortlist (≤30 tickets) are included in an LLM prompt; the full CSV is never sent.
 - No data is written to disk (no logs of queries or results beyond the console).
 
 ## 8. Integration assumptions

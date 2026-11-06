@@ -2,14 +2,16 @@
 # SIP Tickets Miner (web chat)
 
 Lokalni web chat za PM-a: upiše opis problema klijenta (IT/EN) ili broj tiketa, a chat vraća do 3 kandidata
-(ID, naslov, status, assignee, kratko obrazloženje). Podaci se čitaju iz `../resources/issues_export.csv`.
+(ID, naslov, status, istorijski assignee i issue type, kratko obrazloženje). Za opis problema prikazuje i predlog issue type-a i assignee korisnika sa dokazima iz sličnih tiketa. Podaci se čitaju iz `../resources/issues_export.csv`.
 
 ## Kako radi
 
 1. Ako poruka sadrži ID (npr. `BTU-4114`) i tiket postoji, prikazuje se prvi. Ako ne postoji, chat to kaže i traži dalje po ostatku teksta.
 2. Lokalna BM25 pretraga bira do 30 kandidata iz CSV-a.
-3. Copilot CLI (`copilot -p`) rangira te kandidate i vraća JSON; ID, status i assignee uvek se čitaju iz CSV-a.
-4. Ako Copilot ne radi, prikazuju se top 3 lokalna pogotka uz napomenu. Ako ništa ne odgovara: „No matching ticket found“.
+3. Copilot CLI (`copilot -p`) rangira kandidate i bira issue type iz svih jedinstvenih `ISSUETYPE` vrednosti u CSV-u. Assignee predlozi dolaze iz rangiranih tiketa i prikazuju ID-jeve koji ih podržavaju; nisu automatska dodela. ID, status, istorijski assignee i issue type kandidata uvek se čitaju iz CSV-a.
+4. Ako Copilot ne radi, prikazuju se top 3 lokalna pogotka bez klasifikacije i assignee predloga. Ako ništa ne odgovara: „No matching ticket found“.
+
+Export trenutno sadrži 11 različitih numeričkih `ISSUETYPE` vrednosti, bez šifarnika, pa se prikazuju kao kodovi. Kolona `COMPONENT` je prazna u svim redovima; assignee preporuka zato koristi samo istoriju rangiranih sličnih tiketa, ne vlasništvo sistema.
 
 Svaki upit je nezavistan (nema `--continue`). Labele statusa su u `STATUS_LABELS` u `ticket_lookup.py`
 (1/3/4/5/6 prema Jira podrazumevanim vrednostima — PM treba da potvrdi); nepoznati kodovi se prikazuju kao `Status <kod>`.
@@ -23,7 +25,7 @@ Obrazloženje koje daje Copilot ostaje na jeziku upita.
 izbora jezika je menja; izbor se pamti u browseru. Boje su CSS promenljive u `static/style.css`
 (`[data-theme="light"]` / `[data-theme="dark"]`).
 
-**Privatnost:** upit i najviše 30 isečaka tiketa (ID, naslov, skraćen opis, status, assignee) šalju se Copilot servisu.
+**Privatnost:** upit, svi jedinstveni `ISSUETYPE` kodovi i najviše 30 isečaka tiketa (ID, naslov, skraćen opis, status, assignee, issue type) šalju se Copilot servisu.
 Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stvarne upotrebe (vidi `SPEC.md` §10).
 
 ## Testovi

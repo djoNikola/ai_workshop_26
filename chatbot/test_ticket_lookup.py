@@ -21,6 +21,8 @@ class LoadTests(unittest.TestCase):
     def test_fields_are_clean(self):
         t = INDEX.get("btu-4114")
         self.assertEqual((t["status"], t["assignee"]), ("Closed", "alfmancu"))
+        self.assertIn(t["issuetype"], INDEX.issue_types)
+        self.assertEqual(len(INDEX.issue_types), 11)
         self.assertTrue(all(len(x["description"]) <= tl.DESCRIPTION_LIMIT for x in INDEX.tickets.values()))
         self.assertNotIn("[NULL]", {x["assignee"] for x in INDEX.tickets.values()})
 
@@ -73,10 +75,21 @@ class ParseTests(unittest.TestCase):
             tl.parse_llm_results("not json", self.SHORT)
 
     def test_prompt_has_only_allowed_fields(self):
-        prompt = tl.build_prompt("q", self.SHORT)
+        prompt = tl.build_prompt("q", self.SHORT, INDEX.issue_types)
         self.assertIn("BTU-4113", prompt)
         row = json.loads(prompt.split("Tickets:\n", 1)[1])[0]
-        self.assertEqual(set(row), {"pkey", "summary", "description", "status", "assignee"})
+        self.assertEqual(set(row), {"pkey", "summary", "description", "status", "assignee", "issuetype"})
+        allowed_types = json.loads(prompt.split("Allowed issue types:\n", 1)[1].split("\n\nTickets:", 1)[0])
+        self.assertEqual(allowed_types, INDEX.issue_types)
+
+    def test_issue_type_is_limited_to_csv_options(self):
+        output = json.dumps({"results": [], "suggested_issue_type": INDEX.issue_types[0], "issue_type_reason": "match"})
+        parsed = tl.parse_llm_response(output, self.SHORT, INDEX.issue_types)
+        self.assertEqual(parsed["suggested_issue_type"], INDEX.issue_types[0])
+        output = json.dumps({"results": [], "suggested_issue_type": "999", "issue_type_reason": "made up"})
+        parsed = tl.parse_llm_response(output, self.SHORT, INDEX.issue_types)
+        self.assertIsNone(parsed["suggested_issue_type"])
+        self.assertEqual(parsed["issue_type_reason"], "")
 
 
 class LookupTests(unittest.TestCase):
@@ -122,6 +135,27 @@ class LookupTests(unittest.TestCase):
         for c in r["candidates"]:
             t = INDEX.get(c["pkey"])
             self.assertEqual((c["summary"], c["status"], c["assignee"]), (t["summary"], t["status"], t["assignee"]))
+
+    def test_suggestions_use_ranked_ticket_evidence(self):
+        keys = [t["pkey"] for t in INDEX.shortlist("preanalitica")][:2]
+        llm = lambda prompt: json.dumps({
+            "results": [{"pkey": keys[0], "reason": "closest"}, {"pkey": keys[1], "reason": "similar"}],
+            "suggested_issue_type": INDEX.issue_types[0],
+            "issue_type_reason": "matches the examples",
+        })
+        result = tl.lookup("preanalitica", INDEX, llm)
+        self.assertEqual(result["suggested_issue_type"], INDEX.issue_types[0])
+        self.assertEqual(result["issue_type_reason"], "matches the examples")
+        candidate_by_key = {candidate["pkey"]: candidate for candidate in result["candidates"]}
+        for suggestion in result["assignee_suggestions"]:
+            self.assertTrue(suggestion["evidence"])
+            self.assertTrue(all(candidate_by_key[key]["assignee"] == suggestion["assignee"]
+                                for key in suggestion["evidence"]))
+
+    def test_fallback_does_not_make_suggestions(self):
+        result = tl.lookup("preanalitica", INDEX, failing_llm)
+        self.assertIsNone(result["suggested_issue_type"])
+        self.assertEqual(result["assignee_suggestions"], [])
 
 
 if __name__ == "__main__":

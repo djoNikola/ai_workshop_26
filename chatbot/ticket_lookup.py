@@ -68,6 +68,7 @@ def _clean(value):
 class TicketIndex:
     def __init__(self, tickets):
         self.tickets = {t["pkey"]: t for t in tickets}
+        self.issue_types = sorted({t["issuetype"] for t in self.tickets.values() if t["issuetype"]})
         self._docs = []
         df = Counter()
         for t in self.tickets.values():
@@ -94,6 +95,7 @@ class TicketIndex:
                     "description": _clean(row.get("DESCRIPTION"))[:DESCRIPTION_LIMIT],
                     "status": status_label(row.get("ISSUESTATUS")),
                     "assignee": assignee_label(row.get("ASSIGNEE")),
+                    "issuetype": _clean(row.get("ISSUETYPE")),
                 })
         return cls(tickets)
 
@@ -129,26 +131,32 @@ def extract_ids(text):
     return seen
 
 
-def build_prompt(query, shortlist):
+def build_prompt(query, shortlist, issue_types=None):
     """Only the allowed fields for the shortlisted tickets are sent."""
     rows = [
         {"pkey": t["pkey"], "summary": t["summary"], "description": t["description"],
-         "status": t["status"], "assignee": t["assignee"]}
+         "status": t["status"], "assignee": t["assignee"], "issuetype": t["issuetype"]}
         for t in shortlist
     ]
+    types = sorted(set(issue_types if issue_types is not None else (t["issuetype"] for t in shortlist)))
     return (
         "You match a client's problem description to support tickets. The description may be Italian or English.\n"
         f"Pick at most {MAX_RESULTS} tickets from the list below that really match the description, best first. "
-        "Return an empty list if none is relevant. Use only pkey values from the list.\n"
+        "Return an empty list if none is relevant. Use only pkey values from the list. Also classify the new issue "
+        "using exactly one value from the allowed issue types, or null if it cannot be determined. Do not invent "
+        "issue types. Suggest assignees only through the ranked tickets; do not invent users.\n"
         'Reply with JSON only, no other text, in the form '
-        '{"results":[{"pkey":"BTU-1","reason":"one short sentence in the language of the description"}]}\n\n'
-        f"Client description:\n{query}\n\nTickets:\n{json.dumps(rows, ensure_ascii=False)}\n"
+        '{"results":[{"pkey":"BTU-1","reason":"one short sentence in the language of the description"}], '
+        '"suggested_issue_type":"10", "issue_type_reason":"short reason"}\n\n'
+        f"Client description:\n{query}\n\nAllowed issue types:\n{json.dumps(types, ensure_ascii=False)}\n\n"
+        f"Tickets:\n{json.dumps(rows, ensure_ascii=False)}\n"
     )
 
 
-def parse_llm_results(output, shortlist):
-    """Returns [(pkey, reason)] limited to shortlist IDs; raises ValueError on unusable output."""
+def parse_llm_response(output, shortlist, issue_types):
+    """Parse ranked tickets and accept a type only when it belongs to the CSV taxonomy."""
     allowed = {t["pkey"] for t in shortlist}
+    allowed_types = set(issue_types)
     decoder = json.JSONDecoder()
     for m in re.finditer(r"\{", output or ""):
         try:
@@ -163,13 +171,41 @@ def parse_llm_results(output, shortlist):
                 pkey = str(item.get("pkey", "")).strip().upper()
                 if pkey in allowed and pkey not in [r[0] for r in results]:
                     results.append((pkey, str(item.get("reason", "")).strip()))
-            return results[:MAX_RESULTS]
+            issue_type = data.get("suggested_issue_type")
+            if not isinstance(issue_type, str) or issue_type not in allowed_types:
+                issue_type = None
+            return {
+                "results": results[:MAX_RESULTS],
+                "suggested_issue_type": issue_type,
+                "issue_type_reason": str(data.get("issue_type_reason", "")).strip() if issue_type else "",
+            }
     raise ValueError("no valid JSON result in LLM output")
+
+
+def parse_llm_results(output, shortlist):
+    """Returns [(pkey, reason)] limited to shortlist IDs; raises ValueError on unusable output."""
+    return parse_llm_response(output, shortlist, []) ["results"]
 
 
 def _candidate(ticket, reason):
     return {"pkey": ticket["pkey"], "summary": ticket["summary"], "status": ticket["status"],
-            "assignee": ticket["assignee"], "reason": reason}
+            "assignee": ticket["assignee"], "issuetype": ticket["issuetype"], "reason": reason}
+
+
+def _assignee_suggestions(candidates):
+    suggestions = []
+    by_assignee = {}
+    for candidate in candidates:
+        assignee = candidate["assignee"]
+        if assignee == "Unassigned":
+            continue
+        suggestion = by_assignee.get(assignee)
+        if suggestion is None:
+            suggestion = {"assignee": assignee, "evidence": []}
+            by_assignee[assignee] = suggestion
+            suggestions.append(suggestion)
+        suggestion["evidence"].append(candidate["pkey"])
+    return suggestions
 
 
 def format_reply(notes, candidates):
@@ -182,9 +218,10 @@ def format_reply(notes, candidates):
 
 
 def lookup(query, index, llm, lang=DEFAULT_LANG):
-    """llm(prompt) -> str. Returns {"reply": str, "candidates": [...]}; fixed notes use `lang` (en/it)."""
+    """llm(prompt) -> str. Returns ranked tickets and validated suggestions; notes use `lang` (en/it)."""
     msg = MESSAGES.get(lang, MESSAGES[DEFAULT_LANG])
     notes, candidates = [], []
+    suggested_issue_type, issue_type_reason, assignee_suggestions = None, "", []
     for pkey in extract_ids(query):
         ticket = index.get(pkey)
         if ticket and len(candidates) < MAX_RESULTS:
@@ -197,12 +234,26 @@ def lookup(query, index, llm, lang=DEFAULT_LANG):
     room = MAX_RESULTS - len(candidates)
     if shortlist and room > 0:
         try:
-            ranked = parse_llm_results(llm(build_prompt(text.strip(), shortlist)), shortlist)
-            candidates += [_candidate(index.tickets[p], r) for p, r in ranked[:room]]
+            response = parse_llm_response(
+                llm(build_prompt(text.strip(), shortlist, index.issue_types)), shortlist, index.issue_types
+            )
+            ranked_candidates = [
+                _candidate(index.tickets[p], reason) for p, reason in response["results"][:room]
+            ]
+            candidates += ranked_candidates
+            suggested_issue_type = response["suggested_issue_type"]
+            issue_type_reason = response["issue_type_reason"]
+            assignee_suggestions = _assignee_suggestions(ranked_candidates)
         except Exception:
             notes.append(msg["llm_unavailable"])
             candidates += [_candidate(t, "") for t in shortlist[:room]]
 
     if not candidates:
         notes.append(msg["no_match"])
-    return {"reply": format_reply(notes, candidates), "candidates": candidates}
+    return {
+        "reply": format_reply(notes, candidates),
+        "candidates": candidates,
+        "suggested_issue_type": suggested_issue_type,
+        "issue_type_reason": issue_type_reason,
+        "assignee_suggestions": assignee_suggestions,
+    }
