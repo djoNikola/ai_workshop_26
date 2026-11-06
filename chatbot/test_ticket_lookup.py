@@ -115,5 +115,58 @@ class LookupTests(unittest.TestCase):
             self.assertEqual((c["summary"], c["status"], c["assignee"]), (t["summary"], t["status"], t["assignee"]))
 
 
+class CategorizeTests(unittest.TestCase):
+    QUERY = "servizio per pannellini e stampanti preanalitica"
+
+    @staticmethod
+    def llm_category(code):
+        return lambda prompt: json.dumps({"category": code, "reason": "ok"})
+
+    def test_label(self):
+        self.assertEqual(tl.issuetype_label("10"), "Type 10")
+
+    def test_known_ticket_gets_its_type(self):
+        t = INDEX.get("BTU-4114")
+        r = tl.categorize(t["summary"], INDEX, failing_llm)
+        self.assertEqual(r["category"]["code"], t["issuetype"])
+        self.assertIn("LLM ranking was unavailable", r["reply"])
+        self.assertIn("BTU-4114", [e["pkey"] for e in r["examples"]])
+
+    def test_limits_and_example_fields(self):
+        r = tl.categorize(self.QUERY, INDEX, failing_llm)
+        self.assertLessEqual(len(r["alternatives"]), tl.ALT_RESULTS)
+        self.assertLessEqual(len(r["examples"]), tl.MAX_RESULTS)
+        for e in r["examples"]:
+            t = INDEX.get(e["pkey"])
+            self.assertEqual((e["summary"], t["issuetype"]), (t["summary"], r["category"]["code"]))
+
+    def test_llm_choice_used_when_in_shortlist(self):
+        shortlist = INDEX.shortlist(self.QUERY)
+        local = tl.category_scores(INDEX.shortlist_scored(self.QUERY))[0][0]
+        other = next((t["issuetype"] for t in shortlist if t["issuetype"] and t["issuetype"] != local), None)
+        if other:
+            r = tl.categorize(self.QUERY, INDEX, self.llm_category(other))
+            self.assertEqual(r["category"]["code"], other)
+
+    def test_foreign_category_falls_back(self):
+        r = tl.categorize(self.QUERY, INDEX, self.llm_category("999"))
+        self.assertIn("LLM ranking was unavailable", r["reply"])
+        self.assertNotEqual(r["category"]["code"], "999")
+
+    def test_no_match_skips_llm(self):
+        r = tl.categorize("zzzz qqqq", INDEX, lambda p: self.fail("LLM called"))
+        self.assertIsNone(r["category"])
+        self.assertIn("No category could be suggested", r["reply"])
+
+    def test_llm_null_means_no_category(self):
+        r = tl.categorize("ricetta per la torta di mele", INDEX, lambda p: '{"category": null, "reason": "x"}')
+        self.assertIsNone(r["category"])
+
+    def test_prompt_fields(self):
+        rows = tl.build_category_prompt("q", INDEX.shortlist(self.QUERY))
+        self.assertNotIn("assignee", rows)
+        self.assertNotIn('"status"', rows)
+
+
 if __name__ == "__main__":
     unittest.main()

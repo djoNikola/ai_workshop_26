@@ -19,6 +19,8 @@ Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stva
 
 ## Testovi
 
+Kategorizacija: `http://localhost:8765/categorize` predlaže `ISSUETYPE` za novi tiket na osnovu sličnih tiketa (labele u `ISSUETYPE_LABELS` u `ticket_lookup.py`; nepoznati kodovi se prikazuju kao `Type <kod>`). Stranica: `sip-categorize.html`.
+
 ```bash
 cd chatbot && python3 -m unittest test_ticket_lookup
 ```
