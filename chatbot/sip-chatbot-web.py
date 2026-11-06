@@ -13,6 +13,7 @@ import ticket_lookup
 HOST, PORT = "127.0.0.1", 8765
 INDEX = Path(__file__).with_name("sip-chatbot.html")
 CATEGORIZE_PAGE = Path(__file__).with_name("sip-categorize.html")
+RECOMMEND_PAGE = Path(__file__).with_name("sip-recommend.html")
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 INSTALL_CMD = ["npm", "install", "-g", "@github/copilot"]
 LOG_LIMIT = 8000
@@ -199,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, INDEX.read_text(encoding="utf-8"), "text/html; charset=utf-8")
         if self.path == "/categorize":
             return self._send(200, CATEGORIZE_PAGE.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+        if self.path == "/recommend":
+            return self._send(200, RECOMMEND_PAGE.read_text(encoding="utf-8"), "text/html; charset=utf-8")
         if self.path == "/api/status":
             return self._send(200, json.dumps(get_status()))
         self._send(404, "{}")
@@ -215,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/login":
             start_login()
             return self._send(200, json.dumps(get_status()))
-        if self.path not in ("/api/chat", "/api/categorize"):
+        if self.path not in ("/api/chat", "/api/categorize", "/api/recommend"):
             return self._send(404, "{}")
         if get_status()["state"] != "ready":
             return self._send(409, json.dumps({"reply": "Copilot nije spreman (instalacija ili prijava)."}))
@@ -227,7 +230,8 @@ class Handler(BaseHTTPRequestHandler):
         if not prompt:
             return self._send(400, "{}")
         try:
-            handler = ticket_lookup.categorize if self.path == "/api/categorize" else ticket_lookup.lookup
+            handler = {"/api/categorize": ticket_lookup.categorize,
+                       "/api/recommend": ticket_lookup.recommend}.get(self.path, ticket_lookup.lookup)
             result = handler(prompt, load_index(), run_copilot)
         except Exception as e:
             return self._send(500, json.dumps({"reply": f"Greška: {e}"}))

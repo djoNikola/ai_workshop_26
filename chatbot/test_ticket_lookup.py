@@ -168,5 +168,61 @@ class CategorizeTests(unittest.TestCase):
         self.assertNotIn('"status"', rows)
 
 
+class RecommendTests(unittest.TestCase):
+    QUERY = "servizio per pannellini e stampanti preanalitica"
+
+    @staticmethod
+    def fail_llm(prompt):
+        raise RuntimeError("down")
+
+    def test_limits_and_csv_facts(self):
+        r = tl.recommend(self.QUERY, INDEX, self.fail_llm)
+        self.assertTrue(1 <= len(r["experts"]) <= tl.RECOMMEND_EXPERTS)
+        self.assertLessEqual(len(r["tickets"]), tl.RECOMMEND_TICKETS)
+        for x in r["experts"]:
+            self.assertNotEqual(x["assignee"], "Unassigned")
+            for t in x["tickets"]:
+                row = INDEX.get(t["pkey"])
+                self.assertEqual((t["summary"], x["assignee"]), (row["summary"], row["assignee"]))
+
+    def test_known_ticket_assignee_recommended(self):
+        t = INDEX.get("BTU-4114")
+        r = tl.recommend(t["summary"], INDEX, self.fail_llm)
+        self.assertIn(t["assignee"], [x["assignee"] for x in r["experts"]])
+        self.assertIn("LLM ranking was unavailable", r["reply"])
+
+    def test_llm_choice_and_reason(self):
+        index = tl.TicketIndex([
+            {"pkey": "X-1", "summary": "stampante etichette", "description": "", "status": "Closed",
+             "assignee": "agiallo", "issuetype": "10"},
+            {"pkey": "X-2", "summary": "stampante etichette rotta", "description": "", "status": "Closed",
+             "assignee": "mrossi", "issuetype": "10"},
+        ])
+        out = '{"experts":[{"assignee":"agiallo","reason":"ok"},{"assignee":"ghost","reason":"x"}]}'
+        r = tl.recommend("stampante etichette", index, lambda p: out)
+        self.assertEqual([x["assignee"] for x in r["experts"]], ["agiallo"])
+        self.assertEqual(r["experts"][0]["reason"], "ok")
+
+    def test_llm_empty_means_no_expert(self):
+        r = tl.recommend(self.QUERY, INDEX, lambda p: '{"experts": []}')
+        self.assertEqual(r["experts"], [])
+
+    def test_skips_unassigned(self):
+        index = tl.TicketIndex([
+            {"pkey": "X-1", "summary": "stampante etichette", "description": "", "status": "Closed",
+             "assignee": "Unassigned", "issuetype": "10"},
+            {"pkey": "X-2", "summary": "stampante etichette rotta", "description": "", "status": "Closed",
+             "assignee": "mrossi", "issuetype": "10"},
+        ])
+        r = tl.recommend("stampante etichette", index, self.fail_llm)
+        self.assertEqual([x["assignee"] for x in r["experts"]], ["mrossi"])
+        self.assertEqual([t["pkey"] for t in r["tickets"]], ["X-2"])
+
+    def test_no_match(self):
+        r = tl.recommend("zzzz qqqq", INDEX, self.fail_llm)
+        self.assertEqual(r["experts"], [])
+        self.assertIn("No expert could be recommended", r["reply"])
+
+
 if __name__ == "__main__":
     unittest.main()

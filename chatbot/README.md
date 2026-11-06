@@ -82,3 +82,5 @@ Dok Copilot nije spreman, dugme „Pošalji " je onemogućeno.
 - Server sluša samo na `127.0.0.1`, pa je dostupan samo na tvom računaru.
 - Odbijaju se zahtevi sa stranim `Host` i `Origin` zaglavljem.
 - Svi upiti idu preko Copilot naloga osobe koja je pokrenula server. Nemoj ga izlagati na internet bez prijave korisnika i ograničenja broja zahteva.
+
+Preporuka osoba: `http://localhost:8765/recommend` na osnovu 5 najsličnijih tiketa sa dodeljenim assignee-jem preporučuje 2-3 osobe (kolona `ASSIGNEE`). Radi lokalno, bez Copilota. Stranica: `sip-recommend.html`. Sve tri stranice imaju linkove jedna na drugu.

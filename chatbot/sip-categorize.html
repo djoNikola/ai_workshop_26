@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIP Ticket Categorization</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; display: flex; justify-content: center; font-family: system-ui, sans-serif; background: #f3f4f6; }
+  main { width: 100%; max-width: 900px; padding: 12px; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  a { color: #2563eb; }
+  textarea { width: 100%; min-height: 110px; padding: 10px; font: 15px system-ui, sans-serif; border: 1px solid #d1d5db; border-radius: 8px; }
+  button { margin-top: 8px; padding: 10px 18px; font-size: 15px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
+  button:disabled { background: #9ca3af; cursor: default; }
+  #notice { margin-top: 8px; color: #b45309; }
+  #result { margin-top: 12px; }
+  .box { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+  .cat { font-size: 20px; font-weight: 600; color: #059669; }
+  .meta { font-size: 13px; color: #374151; margin-top: 4px; }
+  .why { font-size: 13px; color: #6b7280; font-style: italic; margin-top: 4px; }
+  .ex { margin-top: 6px; } .ex b { color: #1d4ed8; }
+  .err { color: #b91c1c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SIP Ticket Categorization</h1>
+  <p><a href="/">Ticket lookup</a> | <a href="/recommend">Expert recommendation</a></p>
+  <form id="form">
+    <textarea id="entry" placeholder="Describe the client's problem (IT/EN) to find which category the new ticket belongs to..." autofocus></textarea>
+    <button id="btn" type="submit" disabled>Suggest category</button>
+  </form>
+  <div id="notice"></div>
+  <div id="result"></div>
+</main>
+<script>
+  const form = document.getElementById("form");
+  const entry = document.getElementById("entry");
+  const btn = document.getElementById("btn");
+  const notice = document.getElementById("notice");
+  const result = document.getElementById("result");
+  let ready = false;
+  let busy = false;
+
+  function el(tag, text, cls) {
+    const e = document.createElement(tag);
+    if (text) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  async function refresh() {
+    try {
+      const s = await (await fetch("/api/status")).json();
+      ready = s.state === "ready";
+      notice.textContent = ready ? "" : "Copilot is not ready. Open the ticket lookup page to install or log in.";
+    } catch (err) {
+      ready = false;
+      notice.textContent = "Server unavailable.";
+    }
+    btn.disabled = busy || !ready;
+  }
+  refresh();
+  setInterval(refresh, 2000);
+
+  function render(data) {
+    result.replaceChildren();
+    if (!data.category) {
+      result.append(el("div", data.reply, "box"));
+      return;
+    }
+    const box = el("div", "", "box");
+    box.append(el("div", data.category.label, "cat"),
+               el("div", "Confidence: " + data.category.confidence + "%", "meta"));
+    if (data.category.reason) box.append(el("div", data.category.reason, "why"));
+    if ((data.reply || "").startsWith("LLM ranking")) box.append(el("div", data.reply.split("\n")[0], "why"));
+    if (data.alternatives.length) {
+      box.append(el("div", "Alternatives: " + data.alternatives.map(a => a.label + " (" + a.confidence + "%)").join(", "), "meta"));
+    }
+    result.append(box);
+    if (data.examples.length) {
+      const ex = el("div", "", "box");
+      ex.append(el("div", "Similar tickets in this category", "meta"));
+      for (const t of data.examples) {
+        const row = el("div", "", "ex");
+        row.append(el("b", t.pkey), " - " + t.summary);
+        ex.append(row);
+      }
+      result.append(ex);
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const prompt = entry.value.trim();
+    if (!prompt || !ready || busy) return;
+    busy = true;
+    btn.disabled = true;
+    result.replaceChildren(el("div", "Working...", "box"));
+    try {
+      const r = await fetch("/api/categorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
+      render(data);
+    } catch (err) {
+      result.replaceChildren(el("div", "Error: " + err.message, "box err"));
+    }
+    busy = false;
+    btn.disabled = !ready;
+  });
+</script>
+</body>
+</html>

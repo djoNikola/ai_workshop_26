@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIP Expert Recommendation</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; display: flex; justify-content: center; font-family: system-ui, sans-serif; background: #f3f4f6; }
+  main { width: 100%; max-width: 900px; padding: 12px; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  a { color: #2563eb; }
+  textarea { width: 100%; min-height: 110px; padding: 10px; font: 15px system-ui, sans-serif; border: 1px solid #d1d5db; border-radius: 8px; }
+  button { margin-top: 8px; padding: 10px 18px; font-size: 15px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
+  button:disabled { background: #9ca3af; cursor: default; }
+  #result { margin-top: 12px; }
+  .box { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+  .who { font-size: 18px; font-weight: 600; color: #059669; }
+  .meta { font-size: 13px; color: #374151; margin-top: 4px; }
+  .ex { margin-top: 6px; } .ex b { color: #1d4ed8; }
+  .err { color: #b91c1c; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SIP Expert Recommendation</h1>
+  <p><a href="/">Ticket lookup</a> | <a href="/categorize">Ticket categorization</a></p>
+  <form id="form">
+    <textarea id="entry" placeholder="Describe the problem (IT/EN) to find who solved similar tickets..." autofocus></textarea>
+    <button id="btn" type="submit">Recommend experts</button>
+  </form>
+  <div id="result"></div>
+</main>
+<script>
+  const form = document.getElementById("form");
+  const entry = document.getElementById("entry");
+  const btn = document.getElementById("btn");
+  const result = document.getElementById("result");
+  let busy = false;
+
+  function el(tag, text, cls) {
+    const e = document.createElement(tag);
+    if (text) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  function render(data) {
+    result.replaceChildren();
+    if (!data.experts.length) {
+      result.append(el("div", data.reply, "box"));
+      return;
+    }
+    for (const n of data.notes || []) result.append(el("div", n, "box"));
+    for (const x of data.experts) {
+      const box = el("div", "", "box");
+      box.append(el("div", x.assignee, "who"),
+                 el("div", "Relevance: " + x.confidence + "% - solved " + x.tickets.length + " similar ticket(s)", "meta"));
+      if (x.reason) box.append(el("div", x.reason, "meta"));
+      for (const t of x.tickets) {
+        const row = el("div", "", "ex");
+        row.append(el("b", t.pkey), " - " + t.summary);
+        box.append(row);
+      }
+      result.append(box);
+    }
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const prompt = entry.value.trim();
+    if (!prompt || busy) return;
+    busy = true;
+    btn.disabled = true;
+    result.replaceChildren(el("div", "Working...", "box"));
+    try {
+      const r = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
+      render(data);
+    } catch (err) {
+      result.replaceChildren(el("div", "Error: " + err.message, "box err"));
+    }
+    busy = false;
+    btn.disabled = false;
+  });
+</script>
+</body>
+</html>

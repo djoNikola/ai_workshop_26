@@ -213,3 +213,43 @@ With the server running, open `http://localhost:8765/categorize`:
 2. Type `ricetta per la torta di mele`. The app says no category could be suggested (AC-C2).
 
 
+
+## 14. Expert recommendation (new URL `/recommend`)
+
+OpenSpec change: `openspec/changes/expert-recommendation/`.
+
+### 14.1 Goal
+The PM describes a problem (Italian, English or mixed). The app recommends 2-3 people who can solve it: the `ASSIGNEE` of the most similar tickets in `resources/issues_export.csv`.
+
+### 14.2 Approach
+- **URL**: `GET /recommend` (page) and `POST /api/recommend` (`{"prompt": ...}`). Existing endpoints are unchanged; same Host/Origin checks (R11). Copilot is not needed.
+- **Tickets**: the existing BM25 shortlist, unassigned tickets dropped, top 5 kept. Ticket IDs in the text are plain text.
+- **People**: score per assignee = sum of BM25 scores of their tickets among the 5; top 3 by score (ties by name). Relevance = share of the total score.
+- **Render**: per person, name, relevance %, and the similar tickets (ID, summary from the CSV).
+- **No match**: no shared terms with any assigned ticket gives "No expert could be recommended".
+- **Links**: `/`, `/categorize` and `/recommend` link to each other.
+
+### 14.3 Requirements
+
+| ID | Requirement |
+|----|-------------|
+| E1 | `/recommend` shows a form; the PM enters a free-text problem description. |
+| E2 | The response recommends 2-3 assignees (fewer only if fewer distinct assignees exist among the matched tickets). |
+| E3 | Recommendations are based on the 5 most relevant assigned tickets. |
+| E4 | Each person is shown with a relevance % and the tickets (ID, summary) they handled, from the CSV. |
+| E5 | Unassigned tickets are never used. |
+| E6 | With no relevant ticket, nobody is recommended. |
+| E7 | The data stays local; no LLM call. |
+| E8 | The three pages link to each other. |
+
+### 14.4 Acceptance criteria
+- **AC-E1** (E2, E4): a description copied from a known ticket includes that ticket's assignee, with that ticket listed.
+- **AC-E2** (E6): `ricetta per la torta di mele` recommends nobody.
+- **AC-E3** (E2, E3): no response has more than 3 people or 5 tickets.
+- **AC-E4** (E5): no recommended person is "Unassigned".
+
+### 14.5 Test cases
+Unit tests (`RecommendTests` in `chatbot/test_ticket_lookup.py`): limits and CSV facts; known ticket's assignee recommended; unassigned skipped; no match. Manual: AC-E1, AC-E2 in the browser at `/recommend`, and a link check on the three pages.
+
+### 14.6 Risks
+Lexical shortlist (cross-language misses); assignees may have left the team; frequent assignees can dominate.

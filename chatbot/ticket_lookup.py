@@ -19,6 +19,8 @@ STATUS_LABELS = {"1": "Open", "3": "In Progress", "4": "Reopened", "5": "Resolve
 # The export has no decode table for ISSUETYPE; the PM must supply labels. Unknown codes show as "Type <code>".
 ISSUETYPE_LABELS = {}
 ALT_RESULTS = 2
+RECOMMEND_TICKETS = 5
+RECOMMEND_EXPERTS = 3
 
 STOPWORDS = set(
     "il lo la i gli le un uno una di del dello della dei degli delle da dal dalla in nel nella su sul sulla "
@@ -202,6 +204,84 @@ def lookup(query, index, llm):
     if not candidates:
         notes.append("No matching ticket found. Try adding more detail (system, site, error).")
     return {"reply": format_reply(notes, candidates), "candidates": candidates}
+
+
+def build_expert_prompt(query, shortlist):
+    """Only the allowed fields for the shortlisted tickets are sent."""
+    rows = [
+        {"pkey": t["pkey"], "summary": t["summary"], "description": t["description"],
+         "status": t["status"], "assignee": t["assignee"]}
+        for t in shortlist
+    ]
+    return (
+        "You recommend which support engineer (assignee) should handle a new problem, based on who solved "
+        "similar tickets. The description may be Italian or English.\n"
+        f"Pick at most {RECOMMEND_EXPERTS} assignees from the tickets below, best first. "
+        "Return an empty list if none of the tickets is really relevant. Use only assignee values from the list.\n"
+        'Reply with JSON only, no other text, in the form '
+        '{"experts":[{"assignee":"name","reason":"one short sentence in the language of the description"}]}\n\n'
+        f"Client description:\n{query}\n\nSimilar tickets:\n{json.dumps(rows, ensure_ascii=False)}\n"
+    )
+
+
+def parse_experts(output, shortlist):
+    """Returns [(assignee, reason)] limited to shortlist assignees; raises ValueError on unusable output."""
+    allowed = {t["assignee"] for t in shortlist}
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"\{", output or ""):
+        try:
+            data, _ = decoder.raw_decode(output[m.start():])
+        except ValueError:
+            continue
+        if isinstance(data, dict) and isinstance(data.get("experts"), list):
+            results = []
+            for item in data["experts"]:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("assignee", "")).strip()
+                if name in allowed and name not in [r[0] for r in results]:
+                    results.append((name, str(item.get("reason", "")).strip()))
+            return results[:RECOMMEND_EXPERTS]
+    raise ValueError("no valid JSON result in LLM output")
+
+
+def recommend(query, index, llm):
+    """llm(prompt) -> str. Recommends assignees of the most similar assigned tickets; IDs are plain text."""
+    scored = [(t, s) for t, s in index.shortlist_scored(query) if t["assignee"] != "Unassigned"]
+    scored = scored[:RECOMMEND_TICKETS]
+    if not scored:
+        return {"reply": "No expert could be recommended. Try adding more detail (system, site, error).",
+                "experts": [], "tickets": []}
+
+    totals, tickets_by = {}, {}
+    for t, score in scored:
+        totals[t["assignee"]] = totals.get(t["assignee"], 0.0) + score
+        tickets_by.setdefault(t["assignee"], []).append(t)
+    total = sum(totals.values())
+    ranking = sorted(totals.items(), key=lambda s: (-s[1], s[0]))[:RECOMMEND_EXPERTS]
+    notes, reasons = [], {}
+    try:
+        picked = parse_experts(llm(build_expert_prompt(query.strip(), [t for t, _ in scored])),
+                               [t for t, _ in scored])
+        ranking = [(a, totals[a]) for a, _ in picked]
+        reasons = dict(picked)
+    except Exception:
+        notes.append("LLM ranking was unavailable;         showing the best keyword match.")
+    if not ranking:
+        return {"reply": "No expert could be recommended. Try adding more detail (system, site, error).",
+                "experts": [], "tickets": []}
+
+    experts = [{"assignee": a, "confidence": round(100 * s / total), "reason": reasons.get(a, ""),
+                "tickets": [{"pkey": t["pkey"], "summary": t["summary"]} for t in tickets_by[a]]}
+               for a, s in ranking]
+    tickets = [_candidate(t, "") for t, _ in scored]
+    lines = list(notes)
+    for i, e in enumerate(experts, 1):
+        lines.append(f"{i}. {e['assignee']} (relevance {e['confidence']}%) - "
+                     + ", ".join(t["pkey"] for t in e["tickets"]))
+        if e["reason"]:
+            lines.append(f"   {e['reason']}")
+    return {"reply": "\n".join(lines), "notes": notes, "experts": experts, "tickets": tickets}
 
 
 def category_scores(scored):
