@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>SIP Tickets Miner - Categorize</title>
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="categorize">
+<main>
+  <header>
+    <h1>SIP Tickets Miner</h1>
+    <div class="tools">
+      <a id="nav" class="nav" href="/"></a>
+      <button type="button" id="theme" class="icon-btn">
+        <svg class="icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
+        <svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div id="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true" title="English"><svg class="flag" viewBox="0 0 60 30" aria-hidden="true"><clipPath id="gb-s"><path d="M0,0v30h60v-30z"/></clipPath><clipPath id="gb-t"><path d="M30,15h30v15zv15h-30zh-30v-15zv-15h30z"/></clipPath><g clip-path="url(#gb-s)"><path d="M0,0v30h60v-30z" fill="#012169"/><path d="M0,0L60,30M60,0L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0L60,30M60,0L0,30" clip-path="url(#gb-t)" stroke="#C8102E" stroke-width="4"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></g></svg>EN</button>
+        <button type="button" data-lang="it" aria-pressed="false" title="Italiano"><svg class="flag" viewBox="0 0 3 2" aria-hidden="true"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#CE2B37"/></svg>IT</button>
+      </div>
+    </div>
+  </header>
+  <div id="setup" hidden></div>
+  <div id="log"></div>
+  <form id="form">
+    <input id="entry" autocomplete="off" autofocus>
+    <button id="btn" type="submit"></button>
+  </form>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
