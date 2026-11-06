@@ -102,9 +102,21 @@ class LookupTests(unittest.TestCase):
         self.assertIn("No matching ticket found", r["reply"])
 
     def test_degraded_mode(self):
-        r = tl.lookup("campioni consegnati da consegnare", INDEX, failing_llm)
+        with self.assertLogs("ticket_lookup", level="ERROR") as logs:
+            r = tl.lookup("campioni consegnati da consegnare", INDEX, failing_llm)
+        self.assertIn("RuntimeError: down", logs.output[0])
         self.assertEqual(len(r["candidates"]), tl.MAX_RESULTS)
         self.assertIn("LLM ranking was unavailable", r["reply"])
+
+    def test_invalid_llm_output_is_logged(self):
+        with self.assertLogs("ticket_lookup", level="ERROR") as logs:
+            r = tl.lookup("campioni consegnati da consegnare", INDEX, lambda prompt: "not JSON")
+        self.assertIn("ValueError: no valid JSON result", logs.output[0])
+        self.assertIn("LLM ranking was unavailable", r["reply"])
+        self.assertEqual(
+            [c["pkey"] for c in r["candidates"]],
+            [t["pkey"] for t in INDEX.shortlist("campioni consegnati da consegnare")[:tl.MAX_RESULTS]],
+        )
 
     def test_italian_notes(self):
         r = tl.lookup("BTU-99999 zzzqx", INDEX, failing_llm, "it")

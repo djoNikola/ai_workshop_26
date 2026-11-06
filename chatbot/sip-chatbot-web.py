@@ -26,6 +26,21 @@ INSTALL_CMD = ["npm", "install", "-g", "@github/copilot"]
 LOG_LIMIT = 8000
 LLM_TIMEOUT = 120
 INDEX_DATA = None
+LANGS = ("en", "it")
+
+
+class SetupError(Exception):
+    """Setup failure identified by a key the page translates (see ERRORS in sip-chatbot.html)."""
+
+    def __init__(self, key, code=None):
+        super().__init__(key)
+        self.key, self.code = key, code
+
+
+def error_info(e):
+    if isinstance(e, SetupError):
+        return {"key": e.key, "code": e.code}
+    return {"key": "generic", "detail": str(e)}
 
 lock = threading.Lock()
 state_lock = threading.Lock()
@@ -96,17 +111,17 @@ def install_worker():
     npm = shutil.which("npm")
     try:
         if not npm:
-            raise RuntimeError("npm nije pronađen. Instaliraj Node.js (https://nodejs.org) pa pokušaj ponovo.")
+            raise SetupError("npm_missing")
         code = stream_process([npm] + INSTALL_CMD[1:], install, "log")
         if code != 0:
-            raise RuntimeError(f"Instalacija nije uspela (kod {code}).")
+            raise SetupError("install_failed", code)
         found = find_copilot()
         if not found:
-            raise RuntimeError("Copilot je instaliran, ali nije u PATH-u. Restartuj terminal i server.")
+            raise SetupError("not_in_path")
         COPILOT = found
     except Exception as e:
         with state_lock:
-            install["error"] = str(e)
+            install["error"] = error_info(e)
     finally:
         with state_lock:
             install["running"] = False
@@ -117,10 +132,10 @@ def login_worker():
     try:
         code = stream_process([COPILOT, "login", "--device-code"], login, "output")
         if code != 0:
-            raise RuntimeError(f"Prijava nije uspela (kod {code}).")
+            raise SetupError("login_failed", code)
     except Exception as e:
         with state_lock:
-            login["error"] = str(e)
+            login["error"] = error_info(e)
     finally:
         with state_lock:
             login["running"] = False
@@ -174,8 +189,8 @@ def get_status():
 def run_copilot(prompt):
     """Single independent call (no --continue); raises on failure so lookup() can fall back."""
     with lock:
-        proc = subprocess.run([COPILOT, "-p", prompt], capture_output=True, text=True,
-                              encoding="utf-8", timeout=LLM_TIMEOUT)
+        proc = subprocess.run([COPILOT, "--silent"], input=prompt, capture_output=True,
+                              text=True, encoding="utf-8", timeout=LLM_TIMEOUT)
     if proc.returncode != 0 or not proc.stdout.strip():
         raise RuntimeError(proc.stderr.strip() or "empty reply")
     return proc.stdout
@@ -230,11 +245,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(get_status()))
         if self.path not in ("/api/chat", "/api/categorize", "/api/recommend"):
             return self._send(404, "{}")
-        if self.path != "/api/recommend" and get_status()["state"] != "ready":
-            return self._send(409, json.dumps({"reply": "Copilot nije spreman (instalacija ili prijava)."}))
+        if get_status()["state"] != "ready":
+            return self._send(409, json.dumps({"error": "not_ready", "reply": "Copilot is not ready (install or sign-in)."}))
         try:
             length = int(self.headers.get("Content-Length", 0))
-            prompt = json.loads(self.rfile.read(length)).get("prompt", "").strip()
+            body = json.loads(self.rfile.read(length))
+            prompt = body.get("prompt", "").strip()
+            lang = body.get("lang") if body.get("lang") in LANGS else "en"
         except (ValueError, AttributeError):
             return self._send(400, "{}")
         if not prompt:
@@ -246,7 +263,7 @@ class Handler(BaseHTTPRequestHandler):
                 handler = ticket_lookup.categorize if self.path == "/api/categorize" else ticket_lookup.lookup
                 result = handler(prompt, load_index(), run_copilot)
         except Exception as e:
-            return self._send(500, json.dumps({"reply": f"Greška: {e}"}))
+            return self._send(500, json.dumps({"error": "generic", "reply": str(e)}))
         self._send(200, json.dumps(result))
 
     def log_message(self, *args):
@@ -254,14 +271,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"Učitano tiketa: {len(load_index().tickets)}")
+    print(f"Tickets loaded: {len(load_index().tickets)}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://localhost:{PORT}/"
-    print(f"Server je pokrenut na {url} (Ctrl+C za izlaz)")
+    print(f"SIP Tickets Miner is running at {url} (Ctrl+C to quit)")
     if not COPILOT:
-        print("Copilot CLI nije instaliran. Potvrdi instalaciju na stranici u browseru.")
+        print("Copilot CLI is not installed. Confirm the installation on the page in your browser.")
     elif not is_logged_in():
-        print("Copilot CLI nije prijavljen. Prijavi se na stranici u browseru.")
+        print("Copilot CLI is not signed in. Sign in on the page in your browser.")
     webbrowser.open(url)
     try:
         server.serve_forever()

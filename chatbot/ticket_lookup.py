@@ -1,11 +1,14 @@
 """Ticket lookup: ID shortcut, local keyword shortlist, LLM re-rank (see openspec change ticket-lookup-chatbot)."""
 import csv
 import json
+import logging
 import math
 import re
 import unicodedata
 from collections import Counter
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 CSV_PATH = Path(__file__).resolve().parent.parent / "resources" / "issues_export.csv"
 MAX_RESULTS = 3
@@ -17,6 +20,22 @@ ID_RE = re.compile(r"\b([A-Za-z]{2,10}-\d+)\b")
 
 # The export has no decode table. Codes 1/3/4/5/6 follow the Jira defaults; the PM must confirm them.
 STATUS_LABELS = {"1": "Open", "3": "In Progress", "4": "Reopened", "5": "Resolved", "6": "Closed"}
+
+DEFAULT_LANG = "en"
+MESSAGES = {
+    "en": {
+        "exact": "Exact ticket ID match.",
+        "not_found": "Ticket {pkey} was not found.",
+        "llm_unavailable": "LLM ranking was unavailable; showing the best keyword matches.",
+        "no_match": "No matching ticket found. Try adding more detail (system, site, error).",
+    },
+    "it": {
+        "exact": "Corrispondenza esatta con l'ID del ticket.",
+        "not_found": "Il ticket {pkey} non è stato trovato.",
+        "llm_unavailable": "Il ranking LLM non è disponibile; vengono mostrate le migliori corrispondenze per parole chiave.",
+        "no_match": "Nessun ticket corrispondente trovato. Prova ad aggiungere più dettagli (sistema, sito, errore).",
+    },
+}
 
 # The export has no decode table for ISSUETYPE; the PM must supply labels. Unknown codes show as "Type <code>".
 ISSUETYPE_LABELS = {}
@@ -180,15 +199,16 @@ def format_reply(notes, candidates):
     return "\n".join(lines)
 
 
-def lookup(query, index, llm):
-    """llm(prompt) -> str. Returns {"reply": str, "candidates": [...]}."""
+def lookup(query, index, llm, lang=DEFAULT_LANG):
+    """llm(prompt) -> str. Returns {"reply": str, "candidates": [...]}; fixed notes use `lang` (en/it)."""
+    msg = MESSAGES.get(lang, MESSAGES[DEFAULT_LANG])
     notes, candidates = [], []
     for pkey in extract_ids(query):
         ticket = index.get(pkey)
         if ticket and len(candidates) < MAX_RESULTS:
-            candidates.append(_candidate(ticket, "Exact ticket ID match."))
+            candidates.append(_candidate(ticket, msg["exact"]))
         elif not ticket:
-            notes.append(f"Ticket {pkey} was not found.")
+            notes.append(msg["not_found"].format(pkey=pkey))
 
     text = ID_RE.sub(" ", query)
     shortlist = [t for t in index.shortlist(text) if t["pkey"] not in {c["pkey"] for c in candidates}]
@@ -198,11 +218,12 @@ def lookup(query, index, llm):
             ranked = parse_llm_results(llm(build_prompt(text.strip(), shortlist)), shortlist)
             candidates += [_candidate(index.tickets[p], r) for p, r in ranked[:room]]
         except Exception:
-            notes.append("LLM ranking was unavailable; showing the best keyword matches.")
+            logger.exception("LLM ranking failed; falling back to keyword matches")
+            notes.append(msg["llm_unavailable"])
             candidates += [_candidate(t, "") for t in shortlist[:room]]
 
     if not candidates:
-        notes.append("No matching ticket found. Try adding more detail (system, site, error).")
+        notes.append(msg["no_match"])
     return {"reply": format_reply(notes, candidates), "candidates": candidates}
 
 

@@ -8,7 +8,7 @@ Lokalni web chat za PM-a: upiše opis problema klijenta (IT/EN) ili broj tiketa,
 
 1. Ako poruka sadrži ID (npr. `BTU-4114`) i tiket postoji, prikazuje se prvi. Ako ne postoji, chat to kaže i traži dalje po ostatku teksta.
 2. Lokalna BM25 pretraga bira do 30 kandidata iz CSV-a.
-3. Copilot CLI (`copilot -p`) rangira te kandidate i vraća JSON; ID, status i assignee uvek se čitaju iz CSV-a.
+3. Copilot CLI (`copilot --silent`, prompt preko stdin) rangira te kandidate i vraća JSON; ID, status i assignee uvek se čitaju iz CSV-a.
 4. Ako Copilot ne radi, prikazuju se top 3 lokalna pogotka uz napomenu. Ako ništa ne odgovara: „No matching ticket found“.
 
 Svaki upit je nezavistan (nema `--continue`). Labele statusa su u `STATUS_LABELS` u `ticket_lookup.py`
@@ -37,7 +37,7 @@ Sve tri stranice dele chat raspored, navigaciju, EN/IT izbor i light/dark temu.
 ## Testovi
 
 ```bash
-cd chatbot && python3 -m unittest test_ticket_lookup
+cd chatbot && python3 -m unittest test_ticket_lookup test_sip_chatbot_web
 ```
 
 ## Fajlovi
@@ -97,6 +97,7 @@ Dok Copilot nije spreman, dugme „Send“ je onemogućeno.
 | „npm was not found“ | Instaliraj Node.js sa https://nodejs.org pa restartuj terminal. |
 | Instaliran, ali „not in PATH“ | Restartuj terminal i server. |
 | Prijava ne prolazi | Pokreni `copilot login` ručno u terminalu, ili postavi `GH_TOKEN`/`COPILOT_GITHUB_TOKEN`. |
+| „LLM ranking was unavailable“ | U konzoli servera pogledaj `LLM ranking failed` i traceback: beleži se greška CLI poziva ili parsiranja JSON odgovora. Keyword rezultati ostaju dostupni. |
 
 ## Bezbednost
 
