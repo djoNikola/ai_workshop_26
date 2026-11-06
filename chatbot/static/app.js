@@ -4,12 +4,19 @@ const T = {
     send: "Send",
     toDark: "Switch to dark theme",
     toLight: "Switch to light theme",
+    languageLabel: "Language",
     you: "You",
     bot: "Miner",
     searching: "Searching...",
     error: "Error: ",
     status: "Status",
     assignee: "Assignee",
+    categorizeLink: "Ticket categorization",
+    notes: {
+      exact: "Exact ticket ID match.",
+      unavailable: "LLM ranking was unavailable; showing the best keyword matches.",
+      noMatch: "No matching ticket found. Try adding more detail (system, site, error).",
+    },
     noCopilot: cmd => "Copilot CLI is not installed. Install it with: " + cmd + " ?",
     noNpm: "npm was not found. Install Node.js first (https://nodejs.org).",
     install: "Yes, install",
@@ -33,12 +40,19 @@ const T = {
     send: "Invia",
     toDark: "Passa al tema scuro",
     toLight: "Passa al tema chiaro",
+    languageLabel: "Lingua",
     you: "Tu",
     bot: "Miner",
     searching: "Ricerca in corso...",
     error: "Errore: ",
     status: "Stato",
     assignee: "Assegnatario",
+    categorizeLink: "Classificazione ticket",
+    notes: {
+      exact: "Corrispondenza esatta con l'ID del ticket.",
+      unavailable: "Il ranking LLM non è disponibile; vengono mostrate le migliori corrispondenze per parole chiave.",
+      noMatch: "Nessun ticket corrispondente trovato. Prova ad aggiungere più dettagli (sistema, sito, errore).",
+    },
     noCopilot: cmd => "Copilot CLI non è installato. Vuoi installarlo con: " + cmd + " ?",
     noNpm: "npm non trovato. Installa prima Node.js (https://nodejs.org).",
     install: "Sì, installa",
@@ -93,6 +107,11 @@ function setLang(next) {
   for (const b of langButtons) b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
   entry.placeholder = t().placeholder;
   btn.textContent = t().send;
+  document.getElementById("lang").setAttribute("aria-label", t().languageLabel);
+  for (const node of document.querySelectorAll("[data-i18n]")) {
+    const key = node.dataset.i18n;
+    if (t()[key]) node.textContent = t()[key];
+  }
   updateThemeLabel();
   if (lastStatus) renderSetup(lastStatus);
   else if (!setup.hidden) setup.replaceChildren(el("p", t().serverDown, "err"));
@@ -206,7 +225,7 @@ function renderReply(out, data) {
   if (!Array.isArray(data.candidates)) { out.textContent = data.reply; return; }
   out.replaceChildren();
   const notes = (data.reply || "").split("\n").filter(l => !/^\s*\d+\. |^\s{3}/.test(l));
-  for (const n of notes) if (n.trim()) out.append(el("div", n, "note"));
+  for (const n of notes) if (n.trim()) out.append(el("div", translateNote(n), "note"));
   for (const c of data.candidates) {
     const card = el("div", "", "card");
     const head = el("div", "", "head");
@@ -215,9 +234,19 @@ function renderReply(out, data) {
     meta.append(el("span", t().status + ": " + c.status, "pill"),
                 el("span", t().assignee + ": " + c.assignee, "pill"));
     card.append(head, meta);
-    if (c.reason) card.append(el("div", c.reason, "why"));
+    if (c.reason) card.append(el("div", translateNote(c.reason), "why"));
     out.append(card);
   }
+}
+
+function translateNote(text) {
+  if (lang === "en") return text;
+  const missing = text.match(/^Ticket (.+) was not found\.$/);
+  if (missing) return "Ticket " + missing[1] + " non trovato.";
+  if (text === T.en.notes.exact) return t().notes.exact;
+  if (text === T.en.notes.unavailable) return t().notes.unavailable;
+  if (text === T.en.notes.noMatch) return t().notes.noMatch;
+  return text;
 }
 
 form.addEventListener("submit", async (e) => {

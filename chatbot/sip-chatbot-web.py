@@ -13,6 +13,12 @@ import ticket_lookup
 HOST, PORT = "127.0.0.1", 8765
 INDEX = Path(__file__).with_name("sip-chatbot.html")
 CATEGORIZE_PAGE = Path(__file__).with_name("sip-categorize.html")
+STATIC_DIR = Path(__file__).with_name("static")
+STATIC_FILES = {
+    "/static/app.js": "text/javascript; charset=utf-8",
+    "/static/style.css": "text/css; charset=utf-8",
+    "/static/theme.js": "text/javascript; charset=utf-8",
+}
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 INSTALL_CMD = ["npm", "install", "-g", "@github/copilot"]
 LOG_LIMIT = 8000
@@ -199,6 +205,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, INDEX.read_text(encoding="utf-8"), "text/html; charset=utf-8")
         if self.path == "/categorize":
             return self._send(200, CATEGORIZE_PAGE.read_text(encoding="utf-8"), "text/html; charset=utf-8")
+        if self.path in STATIC_FILES:
+            name = self.path.rsplit("/", 1)[1]
+            return self._send(200, (STATIC_DIR / name).read_text(encoding="utf-8"), STATIC_FILES[self.path])
         if self.path == "/api/status":
             return self._send(200, json.dumps(get_status()))
         self._send(404, "{}")

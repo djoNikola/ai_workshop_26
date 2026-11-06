@@ -3,38 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>SIP Ticket Categorization</title>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; display: flex; justify-content: center; font-family: system-ui, sans-serif; background: #f3f4f6; }
-  main { width: 100%; max-width: 900px; padding: 12px; }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  a { color: #2563eb; }
-  textarea { width: 100%; min-height: 110px; padding: 10px; font: 15px system-ui, sans-serif; border: 1px solid #d1d5db; border-radius: 8px; }
-  button { margin-top: 8px; padding: 10px 18px; font-size: 15px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
-  button:disabled { background: #9ca3af; cursor: default; }
-  #notice { margin-top: 8px; color: #b45309; }
-  #result { margin-top: 12px; }
-  .box { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-  .cat { font-size: 20px; font-weight: 600; color: #059669; }
-  .meta { font-size: 13px; color: #374151; margin-top: 4px; }
-  .why { font-size: 13px; color: #6b7280; font-style: italic; margin-top: 4px; }
-  .ex { margin-top: 6px; } .ex b { color: #1d4ed8; }
-  .err { color: #b91c1c; }
-</style>
+<script src="/static/theme.js"></script>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main>
-  <h1>SIP Ticket Categorization</h1>
-  <p><a href="/">Ticket lookup</a> | <a href="/recommend">Expert recommendation</a></p>
-  <form id="form">
-    <textarea id="entry" placeholder="Describe the client's problem (IT/EN) to find which category the new ticket belongs to..." autofocus></textarea>
-    <button id="btn" type="submit" disabled>Suggest category</button>
+<main class="category-main">
+  <header>
+    <h1 data-i18n="title">SIP Ticket Categorization</h1>
+    <div class="tools">
+      <button type="button" id="theme" class="icon-btn">
+        <svg class="icon moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg>
+        <svg class="icon sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div id="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en" aria-pressed="true" title="English">EN</button>
+        <button type="button" data-lang="it" aria-pressed="false" title="Italiano">IT</button>
+      </div>
+    </div>
+  </header>
+  <nav class="page-nav">
+    <a href="/" data-i18n="lookupLink">Ticket lookup</a>
+    <a href="/recommend" data-i18n="recommendLink">Expert recommendation</a>
+  </nav>
+  <form id="form" class="category-form">
+    <textarea id="entry" autofocus></textarea>
+    <button id="btn" type="submit" disabled></button>
   </form>
-  <div id="notice"></div>
-  <div id="result"></div>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <div id="result" aria-live="polite"></div>
 </main>
 <script>
+  const T = {
+    en: {
+      title: "SIP Ticket Categorization",
+      toDark: "Switch to dark theme",
+      toLight: "Switch to light theme",
+      languageLabel: "Language",
+      lookupLink: "Ticket lookup",
+      recommendLink: "Expert recommendation",
+      placeholder: "Describe the client's problem (IT/EN) to find which category the new ticket belongs to...",
+      submit: "Suggest category",
+      suggested: "Suggested category",
+      confidence: "Confidence",
+      alternatives: "Alternatives",
+      similar: "Similar tickets in this category",
+      notReady: "Copilot is not ready. Open the ticket lookup page to install or log in.",
+      serverDown: "Server unavailable.",
+      working: "Working...",
+      noCategory: "No category could be suggested. Try adding more detail (system, site, error).",
+      unavailable: "LLM ranking was unavailable; showing the best keyword match.",
+      error: "Error: ",
+    },
+    it: {
+      title: "Classificazione ticket SIP",
+      toDark: "Passa al tema scuro",
+      toLight: "Passa al tema chiaro",
+      languageLabel: "Lingua",
+      lookupLink: "Ricerca ticket",
+      recommendLink: "Raccomandazione esperto",
+      placeholder: "Descrivi il problema del cliente (IT/EN) per trovare la categoria del nuovo ticket...",
+      submit: "Suggerisci categoria",
+      suggested: "Categoria suggerita",
+      confidence: "Confidenza",
+      alternatives: "Alternative",
+      similar: "Ticket simili in questa categoria",
+      notReady: "Copilot non è pronto. Apri la ricerca ticket per installare o accedere.",
+      serverDown: "Server non disponibile.",
+      working: "Elaborazione...",
+      noCategory: "Nessuna categoria suggerita. Aggiungi dettagli (sistema, sede, errore).",
+      unavailable: "Ranking LLM non disponibile; mostro la migliore corrispondenza per parole chiave.",
+      error: "Errore: ",
+    },
+  };
+  const langButtons = document.querySelectorAll("#lang button");
+  const themeBtn = document.getElementById("theme");
+  let lang = T[localStorage.getItem("lang")] ? localStorage.getItem("lang") : "en";
+  let lastStatus = null;
   const form = document.getElementById("form");
   const entry = document.getElementById("entry");
   const btn = document.getElementById("btn");
@@ -42,6 +88,7 @@
   const result = document.getElementById("result");
   let ready = false;
   let busy = false;
+  const t = () => T[lang];
 
   function el(tag, text, cls) {
     const e = document.createElement(tag);
@@ -50,40 +97,75 @@
     return e;
   }
 
+  function updateThemeLabel() {
+    const label = document.documentElement.dataset.theme === "dark" ? t().toLight : t().toDark;
+    themeBtn.title = label;
+    themeBtn.setAttribute("aria-label", label);
+  }
+
+  function setLang(next) {
+    lang = next;
+    localStorage.setItem("lang", lang);
+    document.documentElement.lang = lang;
+    document.getElementById("lang").setAttribute("aria-label", t().languageLabel);
+    for (const button of langButtons) button.setAttribute("aria-pressed", String(button.dataset.lang === lang));
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t()[node.dataset.i18n];
+    entry.placeholder = t().placeholder;
+    btn.textContent = t().submit;
+    updateThemeLabel();
+    if (lastStatus) renderStatus(lastStatus);
+  }
+
+  function renderStatus(status) {
+    notice.textContent = status.state === "ready" ? "" : t().notReady;
+  }
+
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("theme", next);
+    updateThemeLabel();
+  });
+  for (const button of langButtons) button.addEventListener("click", () => setLang(button.dataset.lang));
+
   async function refresh() {
     try {
       const s = await (await fetch("/api/status")).json();
+      lastStatus = s;
       ready = s.state === "ready";
-      notice.textContent = ready ? "" : "Copilot is not ready. Open the ticket lookup page to install or log in.";
+      renderStatus(s);
     } catch (err) {
+      lastStatus = null;
       ready = false;
-      notice.textContent = "Server unavailable.";
+      notice.textContent = t().serverDown;
     }
     btn.disabled = busy || !ready;
   }
+  setLang(lang);
   refresh();
   setInterval(refresh, 2000);
 
   function render(data) {
     result.replaceChildren();
     if (!data.category) {
-      result.append(el("div", data.reply, "box"));
+      const message = (data.reply || "").startsWith("No category could be suggested") ? t().noCategory : data.reply;
+      result.append(el("div", message, "card"));
       return;
     }
-    const box = el("div", "", "box");
-    box.append(el("div", data.category.label, "cat"),
-               el("div", "Confidence: " + data.category.confidence + "%", "meta"));
+    const box = el("div", "", "card");
+    box.append(el("div", t().suggested + ": " + data.category.label, "category-label"),
+               el("div", t().confidence + ": " + data.category.confidence + "%", "pill category-meta"));
     if (data.category.reason) box.append(el("div", data.category.reason, "why"));
-    if ((data.reply || "").startsWith("LLM ranking")) box.append(el("div", data.reply.split("\n")[0], "why"));
+    if ((data.reply || "").startsWith("LLM ranking")) box.append(el("div", t().unavailable, "why"));
     if (data.alternatives.length) {
-      box.append(el("div", "Alternatives: " + data.alternatives.map(a => a.label + " (" + a.confidence + "%)").join(", "), "meta"));
+      box.append(el("div", t().alternatives + ": " + data.alternatives.map(a => a.label + " (" + a.confidence + "%)").join(", "), "category-alternatives"));
     }
     result.append(box);
     if (data.examples.length) {
-      const ex = el("div", "", "box");
-      ex.append(el("div", "Similar tickets in this category", "meta"));
+      const ex = el("div", "", "card category-examples");
+      ex.append(el("div", t().similar, "suggestion-label"));
       for (const t of data.examples) {
-        const row = el("div", "", "ex");
+        const row = el("div", "", "category-example");
         row.append(el("b", t.pkey), " - " + t.summary);
         ex.append(row);
       }
@@ -97,7 +179,7 @@
     if (!prompt || !ready || busy) return;
     busy = true;
     btn.disabled = true;
-    result.replaceChildren(el("div", "Working...", "box"));
+    result.replaceChildren(el("div", t().working, "card"));
     try {
       const r = await fetch("/api/categorize", {
         method: "POST",
@@ -108,7 +190,7 @@
       if (!r.ok) throw new Error(data.reply || "HTTP " + r.status);
       render(data);
     } catch (err) {
-      result.replaceChildren(el("div", "Error: " + err.message, "box err"));
+      result.replaceChildren(el("div", t().error + err.message, "card error"));
     }
     busy = false;
     btn.disabled = !ready;
