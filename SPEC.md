@@ -221,3 +221,63 @@ With the server running, open `http://localhost:8765/categorize`:
 2. Type `ricetta per la torta di mele`. The app says no category could be suggested (AC-C2).
 
 
+
+## 14. Expert recommendation (new URL `/recommend`)
+
+OpenSpec change: `openspec/changes/expert-recommendation/`.
+
+### 14.1 Goal
+The PM describes a problem (Italian, English or mixed). The app recommends 2-3 people who can solve it: the `ASSIGNEE`s of the most similar past tickets in `resources/issues_export.csv`.
+
+### 14.2 Approach
+- **URL**: `GET /recommend` (page) and `POST /api/recommend` (`{"prompt": ...}`) returning `{"reply", "experts", "tickets"}`. Other endpoints are unchanged. Same local-only Host/Origin checks (R11).
+- **Tickets**: the existing BM25 shortlist, unassigned tickets dropped, top 5 kept (`RECOMMEND_TICKETS`). Ticket IDs in the text are plain text.
+- **People**: score per assignee = sum of BM25 scores of their tickets among the 5. Top 3 (`RECOMMEND_EXPERTS`), ties broken by name. Relevance % = share of the total score of the 5 tickets.
+- **Local only**: no Copilot call; the page works without Copilot and nothing leaves the machine.
+- **No match**: if no assigned ticket shares terms with the description, the answer is "No expert could be recommended" and nobody is listed.
+- **Navigation**: `/`, `/categorize` and `/recommend` link to each other.
+
+### 14.3 Requirements
+
+| ID | Requirement |
+|----|-------------|
+| E1 | `/recommend` shows a form; the PM enters a free-text problem description. |
+| E2 | The response recommends at most 3 people, ranked by summed relevance of their tickets among the 5 most relevant assigned tickets. |
+| E3 | Unassigned tickets are ignored. |
+| E4 | Each person is shown with a relevance percentage and the similar tickets (ID, summary) they handled. |
+| E5 | Tickets and assignees come from the CSV. |
+| E6 | If no assigned ticket shares terms with the description, nobody is recommended. |
+| E7 | No Copilot or LLM is needed; no data leaves the machine. |
+| E8 | Italian, English and mixed input are accepted. |
+
+### 14.4 Acceptance criteria
+- **AC-E1** (E2, E4): a description copied from a known assigned ticket recommends that ticket's assignee, with the ticket shown as evidence.
+- **AC-E2** (E6): `ricetta per la torta di mele` returns "No expert could be recommended" with no people.
+- **AC-E3** (E3): a highly relevant unassigned ticket is skipped and the next assigned one is used.
+- **AC-E4** (E2): no response has more than 3 people or 5 tickets.
+- **AC-E5** (E5): every displayed ticket has ID, summary and assignee equal to its CSV row.
+- **AC-E6** (E7): `/api/recommend` answers when Copilot is unavailable.
+
+Expected results must be checked against the real CSV before the demo.
+
+### 14.5 Test cases
+
+| # | Type | Input | Expected |
+|---|------|-------|----------|
+| TC1 | Unit | Limits | ≤3 people, ≤5 tickets |
+| TC2 | Unit | Known ticket description | its assignee is recommended |
+| TC3 | Unit | Unassigned relevant ticket | skipped |
+| TC4 | Unit | Unrelated description | no people, "No expert could be recommended" |
+| TC5 | Unit | Displayed tickets | ID, summary, assignee equal the CSV row |
+| TC6 | E2E (manual) | AC-E1, AC-E2 in the browser at `/recommend` | as in §14.4 |
+
+### 14.6 Open items and risks
+1. **Lexical shortlist.** Cross-language queries can miss (see §4 and §10).
+2. **Stale assignees.** The assignee of an old ticket may have left the team; the app cannot know.
+3. **Heavy assignees.** The top assignee has ~15% of tickets and may dominate.
+4. **Out of scope.** Availability or workload, contacting people, LLM re-ranking.
+
+### 14.7 Demo scenario
+With the server running, open `http://localhost:8765/recommend`:
+1. Type a description taken from a known ticket. Its assignee is recommended with that ticket as evidence (AC-E1).
+2. Type `ricetta per la torta di mele`. The app says no expert could be recommended (AC-E2).
