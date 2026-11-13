@@ -40,6 +40,22 @@
       margin-bottom: 1.5rem;
     }
     header { border-top: 7px solid var(--accent); }
+    .title-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .title-copy { min-width: 0; }
+    .miner-avatar {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: clamp(4.5rem, 11vw, 7rem);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: rgba(77, 138, 109, .14);
+      box-shadow: inset 0 0 0 1.5px #4d8a6d;
+    }
+    .miner-avatar svg { width: 67%; height: 67%; }
+    .miner-avatar .shell { fill: #4d8a6d; }
+    .miner-avatar .lamp { fill: #f2c94c; stroke: #4d8a6d; stroke-width: 1; }
+    .miner-avatar .beam { fill: none; stroke: #f2c94c; stroke-width: 1.6; stroke-linecap: round; }
     .eyebrow {
       margin: 0 0 .6rem;
       color: var(--accent);
@@ -132,8 +148,20 @@
   <a class="skip-link" href="#problem">Skip to the presentation</a>
   <div class="page">
     <header>
-      <p class="eyebrow">Plain-English presentation plan</p>
-      <h1>SIP Tickets Miner</h1>
+      <div class="title-row">
+        <div class="title-copy">
+          <p class="eyebrow">Plain-English presentation plan</p>
+          <h1>SIP Tickets Miner</h1>
+        </div>
+        <span class="miner-avatar" role="img" aria-label="Miner chatbot avatar">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path class="beam" d="M12 7V4.2M8.2 7.8 6.6 5.7M15.8 7.8l1.6-2.1"/>
+            <path class="shell" d="M5 16.5a7 7 0 0 1 14 0z"/>
+            <rect class="shell" x="2.5" y="16.5" width="19" height="2.8" rx="1.4"/>
+            <circle class="lamp" cx="12" cy="12.6" r="2.5"/>
+          </svg>
+        </span>
+      </div>
       <p class="lead">Helping a Project Manager find the right support ticket, suggest a category for a new issue, and identify people who handled similar problems.</p>
       <p class="meta">Reviewed: 13 November 2026 &middot; Suggested speaking time: 18 minutes &middot; For an audience with no IT background</p>
       <div class="callout">
