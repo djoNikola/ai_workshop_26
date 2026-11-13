@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A plain-English presentation plan for SIP Tickets Miner, including the demo, acceptance checks, AI-assisted development and known limitations.">
+  <title>SIP Tickets Miner - Presentation Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172a43;
+      --muted: #506078;
+      --accent: #006d68;
+      --paper: #ffffff;
+      --background: #f2f5f8;
+      --line: #d7e0e8;
+      --soft: #eaf5f3;
+      --warning: #fff5df;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 1rem; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--ink);
+      font: 1.05rem/1.7 "Segoe UI", Arial, sans-serif;
+    }
+    a { color: #005b83; text-underline-offset: .18em; overflow-wrap: anywhere; }
+    a:hover { text-decoration-thickness: .16em; }
+    a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .skip-link { position: absolute; top: -6rem; left: 1rem; }
+    .skip-link:focus { top: 1rem; background: white; padding: .6rem 1rem; }
+    .page { width: min(1050px, calc(100% - 2rem)); margin: 2rem auto 4rem; }
+    header, .chapter, .reference {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: clamp(1.25rem, 4vw, 2.75rem);
+      margin-bottom: 1.5rem;
+    }
+    header { border-top: 7px solid var(--accent); }
+    .eyebrow {
+      margin: 0 0 .6rem;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    h1 { font-size: clamp(2.2rem, 6vw, 3.5rem); line-height: 1.12; margin: .4rem 0 1rem; }
+    h2 { font-size: clamp(1.6rem, 4vw, 2rem); line-height: 1.3; margin: 0 0 1rem; }
+    h3 { font-size: 1.2rem; line-height: 1.4; margin: 1.7rem 0 .5rem; }
+    p { margin: .6rem 0 1rem; }
+    li { margin: .45rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .lead { font-size: 1.2rem; max-width: 760px; }
+    .meta, .small { color: var(--muted); font-size: .92rem; }
+    nav { margin-bottom: 1.5rem; padding: 0 .25rem; }
+    nav ol { display: flex; flex-wrap: wrap; gap: .6rem 1.6rem; list-style: none; padding: 0; }
+    nav a { font-weight: 600; }
+    .callout, .say {
+      border-left: 4px solid var(--accent);
+      padding: .9rem 1.2rem;
+      background: var(--soft);
+      margin: 1.25rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+    .warning { background: var(--warning); border-left-color: #9c6200; }
+    .callout p:last-child, .say p:last-child { margin-bottom: 0; }
+    .say strong:first-child { display: block; margin-bottom: .35rem; }
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1rem 0; }
+    .card { padding: 1.1rem; border: 1px solid var(--line); border-radius: 8px; }
+    .card h3 { margin-top: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    .flow { padding-left: 1.6rem; }
+    .flow li { padding: .3rem 0 .5rem .3rem; }
+    .demo-step { padding: .5rem 0 1.2rem; border-bottom: 1px solid var(--line); }
+    .demo-step:last-of-type { border-bottom: 0; }
+    .demo-step h3 { margin-top: 1rem; }
+    .label {
+      display: inline-block;
+      padding: .1rem .5rem;
+      background: var(--soft);
+      color: #00534f;
+      border-radius: 4px;
+      font-size: .85rem;
+      font-weight: 700;
+    }
+    code {
+      background: #edf1f5;
+      padding: .12em .35em;
+      border-radius: 4px;
+      font-size: .92em;
+      overflow-wrap: anywhere;
+    }
+    .query {
+      display: block;
+      white-space: normal;
+      padding: .7rem .85rem;
+      margin: .6rem 0;
+      border: 1px solid var(--line);
+    }
+    .checklist { list-style: none; padding-left: 0; }
+    .checklist li { padding-left: 1.6rem; position: relative; }
+    .checklist li::before { content: "\2610"; position: absolute; left: 0; color: var(--accent); }
+    dt { font-weight: 700; margin-top: .8rem; }
+    dd { margin-left: 0; color: var(--muted); }
+    footer { padding: 0 1rem; color: var(--muted); font-size: .9rem; }
+    @media (max-width: 720px) {
+      .cards { grid-template-columns: 1fr; }
+      .page { width: calc(100% - 1rem); margin-top: .5rem; }
+      header, .chapter, .reference { border-radius: 8px; }
+      nav ol { display: block; }
+    }
+    @media print {
+      @page { margin: 16mm; }
+      body { background: white; font-size: 10.5pt; }
+      .page { width: 100%; margin: 0; }
+      header, .chapter, .reference { border: 0; border-radius: 0; padding: 0; margin-bottom: 1.5rem; }
+      .chapter { break-before: page; }
+      nav, .skip-link, .print-hint { display: none; }
+      h2, h3 { break-after: avoid; }
+      .card, .say, .demo-step { break-inside: avoid; }
+      .cards { display: block; }
+      .card { margin-bottom: .6rem; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#problem">Skip to the presentation</a>
+  <div class="page">
+    <header>
+      <p class="eyebrow">Plain-English presentation plan</p>
+      <h1>SIP Tickets Miner</h1>
+      <p class="lead">Helping a Project Manager find the right support ticket, suggest a category for a new issue, and identify people who handled similar problems.</p>
+      <p class="meta">Reviewed: 13 November 2026 &middot; Suggested speaking time: 18 minutes &middot; For an audience with no IT background</p>
+      <div class="callout">
+        <p><strong>How to use this plan:</strong> follow the five numbered sections. Each includes the main message, an explanation and suggested words to say. The demonstration section tells you what to enter and what to check.</p>
+        <p><strong>Two different uses of AI:</strong> AI helped the team build the application, and AI also helps the finished application select results. Section 4 explains both separately.</p>
+      </div>
+      <div class="callout warning">
+        <p><strong>Important update:</strong> expert recommendation now uses GitHub Copilot, just like ticket search and categorization. Its older, computer-only ranking remains a backup, not the normal process. Do not present this feature as fully offline or as keeping all data on the computer.</p>
+      </div>
+      <p class="small">This plan follows the latest tracked project files, through commit <code>5d90084</code>. The separate, untracked <code>new-features</code> folder contains an older copy of several files and is not the basis for this plan.</p>
+      <p class="print-hint small">Copy this single HTML file to any folder and open it directly in a browser. No other project files, installation or internet connection are needed to read it. Use Ctrl+P to print it or save it as a PDF. The application demonstrated in section 3 must be started separately.</p>
+    </header>
+
+    <nav aria-label="Presentation sections">
+      <ol>
+        <li><a href="#problem">1. Problem and user</a></li>
+        <li><a href="#specification">2. What we built</a></li>
+        <li><a href="#demonstration">3. Demonstration</a></li>
+        <li><a href="#ai-development">4. How AI was used</a></li>
+        <li><a href="#limitations">5. Limits and learning</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <section id="problem" class="chapter" aria-labelledby="problem-title">
+        <p class="eyebrow">1 / 5 &middot; About 2 minutes</p>
+        <h2 id="problem-title">Problem and target user</h2>
+        <p><strong>Main message:</strong> a client knows what went wrong, but may not know the correct ticket number. The Project Manager needs to find the corresponding record without reading a long list by hand.</p>
+        <h3>Explain the everyday situation</h3>
+        <p>A <strong>ticket</strong> is a written record of a reported problem, task or request. It normally has a reference number, a description, a status and a person assigned to it. Think of it as a numbered job card.</p>
+        <p>The <strong>Project Manager, or PM,</strong> is the person who receives the client's question and reports back. A client might say, "We still cannot print the labels," give an old ticket number, or give no number at all.</p>
+        <ul>
+          <li><strong>Before:</strong> the PM searches an exported list, opens possible matches and checks which one fits.</li>
+          <li><strong>With Miner:</strong> the PM writes the description and receives a small set of possible matches with their recorded details.</li>
+          <li><strong>The PM still decides:</strong> suggestions help the search; they do not replace checking the ticket before answering the client.</li>
+        </ul>
+        <div class="say">
+          <strong>Suggested words to say</strong>
+          <p>"Imagine searching a spreadsheet with almost four thousand job cards. The client remembers the problem, not its reference number. Miner helps us narrow that list down and see the recorded status and assigned person."</p>
+        </div>
+        <p><strong>Benefit we aim for:</strong> less manual searching and a lower risk of picking the wrong ticket. We have not established a measured time saving or accuracy percentage, so do not claim one.</p>
+      </section>
+
+      <section id="specification" class="chapter" aria-labelledby="specification-title">
+        <p class="eyebrow">2 / 5 &middot; About 3 minutes</p>
+        <h2 id="specification-title">Key points from the specification</h2>
+        <p><strong>Main message:</strong> this is one small application with three related jobs, all based on the same exported ticket list.</p>
+        <p>A <strong>specification</strong> is a written agreement about what the application should do. A <strong>proof of concept, or PoC,</strong> is an early working version used to test the idea, not a finished company-wide service.</p>
+        <div class="cards">
+          <article class="card">
+            <h3>Find a ticket</h3>
+            <p><strong>Question:</strong> "Which existing ticket is the client talking about?"</p>
+            <p><strong>Result:</strong> up to three candidates, with reference number, title, recorded status, assigned person and a matching explanation when AI ranking succeeds.</p>
+          </article>
+          <article class="card">
+            <h3>Suggest a category</h3>
+            <p><strong>Question:</strong> "Which type of ticket should we create for this new problem?"</p>
+            <p><strong>Result:</strong> one suggested category, a percentage, up to two alternatives and up to three example tickets.</p>
+          </article>
+          <article class="card">
+            <h3>Recommend a person</h3>
+            <p><strong>Question:</strong> "Who was assigned similar tickets before?"</p>
+            <p><strong>Result:</strong> up to three people, explanations and at most five supporting tickets in total.</p>
+          </article>
+        </div>
+        <h3>What the application uses</h3>
+        <ul>
+          <li>An exported table, called a <strong>CSV file</strong>, documented as containing 3,816 tickets. It is a snapshot, not a live connection to the ticket system.</li>
+          <li>A browser page running on the presenter's own computer, with English and Italian interface choices and light and dark themes.</li>
+          <li>GitHub Copilot, an online AI service, to rank the selected tickets or people and help choose a category.</li>
+        </ul>
+        <h3>The important rules</h3>
+        <ul>
+          <li>An existing ticket number takes priority in ticket lookup.</li>
+          <li>A wrong number must not stop a search based on the rest of the description.</li>
+          <li>Displayed ticket details come from the exported records. AI-written explanations are not the source of ticket facts.</li>
+          <li>The program restricts AI selections to the tickets, categories and people in the selected records.</li>
+          <li>The application can report no match instead of forcing a suggestion. The demo must check whether it does this appropriately.</li>
+          <li>It does not create, edit or update tickets, contact people, or remember earlier questions. Each question starts a new search.</li>
+        </ul>
+        <div class="say">
+          <strong>Suggested words to say</strong>
+          <p>"We started with finding an existing ticket. We then added two related questions: what category fits a new issue, and who has handled something similar? The application advises us; it does not change the ticket system."</p>
+        </div>
+        <p class="small">The original problem brief covers ticket lookup. Sections 13 and 14 of the current specification describe the later categorization and expert-recommendation additions.</p>
+      </section>
+
+      <section id="demonstration" class="chapter" aria-labelledby="demonstration-title">
+        <p class="eyebrow">3 / 5 &middot; About 6 minutes, plus optional checks</p>
+        <h2 id="demonstration-title">Demonstrate the PoC against clear checks</h2>
+        <p><strong>Main message:</strong> do not just show a nice-looking answer. Show that the answer meets a rule agreed in advance.</p>
+        <div class="callout">
+          <p><strong>What does AC mean?</strong> AC stands for <strong>Acceptance Criterion</strong>: a check with an expected outcome. For example, "enter a known ticket number and show that ticket first." AC1 means the first ticket-lookup check. AC-C1 belongs to categorization; AC-E1 belongs to expert recommendation.</p>
+        </div>
+        <h3>Before anyone presses Send</h3>
+        <ul class="checklist">
+          <li>Use an approved or properly anonymized demonstration dataset. Do not send real client details to an online service merely to rehearse.</li>
+          <li>Have a technical team member start the app from the project folder with <code>python chatbot\sip-chatbot-web.py</code> on Windows.</li>
+          <li>Open <a href="http://localhost:8765/">the ticket lookup page</a> and confirm that Copilot is installed and signed in.</li>
+          <li>Rehearse the expected results below with the chosen dataset. AI rankings can vary. These are specification expectations, not results newly verified by this page.</li>
+          <li>If using a replacement dataset, establish its expected tickets, categories and people before testing. Do not relabel an unexpected answer as a pass during the demo.</li>
+          <li>Prepare anonymized screenshots as a backup. Clearly label them as recorded examples rather than live results.</li>
+        </ul>
+
+        <article class="demo-step">
+          <h3>Demo 1. Find a known ticket <span class="label">AC1</span></h3>
+          <p><strong>Page:</strong> ticket lookup. Enter:</p>
+          <code class="query">BTU-4114</code>
+          <p><strong>Expected:</strong> BTU-4114 appears first. Its title, status and assigned person match the exported record. The specification expects assignee <code>alfmancu</code> for this example.</p>
+          <p><strong>Explain:</strong> "When the number is correct, we should use the exact record rather than ask AI to guess." An ID-only lookup does not need an AI ranking call, although the current app still checks Copilot readiness before accepting requests.</p>
+        </article>
+        <article class="demo-step">
+          <h3>Demo 2. Recover from a wrong number <span class="label">AC2</span></h3>
+          <code class="query">BTU-99999 servizio per pannellini e stampanti preanalitica</code>
+          <p><strong>Expected:</strong> the answer reports that BTU-99999 was not found and includes BTU-4114 among the candidates.</p>
+          <p><strong>Explain:</strong> "The reference was wrong, but the description was still useful. The application continues looking instead of giving up."</p>
+        </article>
+        <article class="demo-step">
+          <h3>Demo 3. Search without a ticket number <span class="label">AC3 / AC4</span></h3>
+          <p><strong>Italian example:</strong></p>
+          <code class="query">il cliente vuole filtrare i campioni consegnati e da consegnare</code>
+          <p><strong>Expected:</strong> BTU-4115 appears among the top three. In plain English, the request is about filtering samples that have or have not been delivered.</p>
+          <p><strong>Optional English example:</strong></p>
+          <code class="query">deliver sample management Cardarelli Napoli</code>
+          <p><strong>Expected:</strong> BTU-4113 appears among the top three. Passing this example does not prove that every English description will match an Italian record.</p>
+        </article>
+        <article class="demo-step">
+          <h3>Demo 4. Ask something unrelated <span class="label">AC5</span></h3>
+          <code class="query">ricetta per la torta di mele</code>
+          <p><strong>Meaning:</strong> "recipe for apple cake."</p>
+          <p><strong>Expected:</strong> a no-matching-ticket message, with no ticket cards.</p>
+          <p><strong>Explain:</strong> "A useful assistant must sometimes say that it found nothing. An unrelated answer is not better than no answer."</p>
+        </article>
+        <article class="demo-step">
+          <h3>Demo 5. Suggest a ticket category <span class="label">AC-C1 / AC-C2</span></h3>
+          <p><strong>Page:</strong> <a href="http://localhost:8765/categorize">categorization</a>. Use an approved description from a known ticket, with its expected category prepared in advance.</p>
+          <p><strong>Expected:</strong> the suggested category matches that ticket's category, and the known ticket appears among the examples. Then try the apple-cake query: no category should be suggested.</p>
+          <p><strong>Explain:</strong> "We compare a new problem with earlier records to suggest where it belongs. The PM still checks the suggestion before creating a ticket."</p>
+          <p class="small">Category names are not yet mapped in the current code. The audience may see a code such as "Type 10" rather than a meaningful business label. Explain this honestly; do not invent a label.</p>
+        </article>
+        <article class="demo-step">
+          <h3>Demo 6. Find someone with relevant history <span class="label">AC-E1 / AC-E2</span></h3>
+          <p><strong>Page:</strong> <a href="http://localhost:8765/recommend">expert recommendation</a>. Use an approved description from a ticket with an assigned person. Prepare the expected person and supporting ticket before the session.</p>
+          <p><strong>Expected:</strong> the person assigned to that ticket is recommended, with the ticket shown as evidence. The apple-cake query should return no recommended people.</p>
+          <p><strong>Explain:</strong> "This person appears because similar work was assigned to them before. The application does not know whether they are available now, or prove that they personally solved every ticket."</p>
+          <p><strong>Explain the percentage:</strong> in the normal expert-ranking path it is Copilot's own estimate of relevance, not a measured success rate or a guarantee of expertise.</p>
+        </article>
+        <article class="demo-step">
+          <h3>Demo 7. Check the facts and the limits <span class="label">AC6 / AC8</span></h3>
+          <p>With a technical teammate, compare a displayed result with its source row. The ticket reference, status and assigned person must agree with the record; status codes are displayed through the configured label mapping. Ticket lookup must never return more than three candidates.</p>
+          <p><strong>Explain:</strong> "AI helps select the records, but the program takes the ticket details from the source table. This reduces one kind of error; it does not guarantee that the selected ticket is relevant."</p>
+        </article>
+        <article class="demo-step">
+          <h3>Optional demo 8. Show the backup search <span class="label">AC7 / AC-C3 / AC-E6</span></h3>
+          <p>Have a technical teammate simulate an AI-call failure after the request passes the readiness check. The app should show local keyword-based results and a notice that AI ranking was unavailable.</p>
+          <p><strong>Explain:</strong> "If the AI call fails, a simpler search can still return suggestions. We tell the user that these are backup results."</p>
+          <p><strong>Do not demonstrate this by signing out:</strong> all three pages currently reject analysis requests when Copilot is not ready. Backup ranking is not a promise of full offline operation.</p>
+        </article>
+
+        <h3>Additional checks for the facilitator</h3>
+        <p>These are useful in rehearsal or automated testing. They do not all need a separate moment in the live presentation.</p>
+        <ul>
+          <li><strong>AC-C4:</strong> if AI names a category absent from the shortlisted records, reject it and use the local suggestion.</li>
+          <li><strong>AC-C5:</strong> show at most one category suggestion, two alternatives and three examples.</li>
+          <li><strong>AC-C6:</strong> category example references, titles and categories agree with the source records.</li>
+          <li><strong>AC-E3:</strong> exclude tickets with no assigned person from the AI recommendation input and evidence.</li>
+          <li><strong>AC-E4:</strong> recommend at most three people and cite at most five tickets in total.</li>
+          <li><strong>AC-E5:</strong> reject invented people, unknown tickets and tickets assigned to someone other than the recommended person; use source titles.</li>
+        </ul>
+        <div class="callout warning">
+          <p><strong>Be clear about evidence:</strong> an expected outcome is not a recorded pass. The current categorization and expert-recommendation task lists still show manual browser checks as unfinished. This page does not certify those checks or live AI accuracy.</p>
+        </div>
+      </section>
+
+      <section id="ai-development" class="chapter" aria-labelledby="ai-title">
+        <p class="eyebrow">4 / 5 &middot; About 4 minutes</p>
+        <h2 id="ai-title">How AI was used during development</h2>
+        <p><strong>Main message:</strong> AI was a development assistant, not just a feature inside the final product. People described the need; AI-assisted work helped turn those requests into specifications, code, tests and documentation.</p>
+        <p>A <strong>prompt</strong> is simply an instruction or question given to AI. A <strong>commit</strong> is a saved checkpoint in the project's change history. The saved prompts, development conversations and AI-coauthored commits support the examples below.</p>
+        <p class="small">Example requests below are plain-English paraphrases of recorded requests, not verbatim quotations. They do not reconstruct every development conversation or attribute every line of code to AI.</p>
+
+        <h3>1. Turn a request into an agreed plan</h3>
+        <p><strong>Example request:</strong> "Add a separate page that suggests the category for a new problem. Use the existing ticket file and its issue-type column. Update the specification and add a separate OpenSpec change."</p>
+        <p><strong>AI-assisted work:</strong> organize the feature into a written proposal, design, expected behavior and smaller implementation tasks. The saved request refers to the earlier ticket-lookup app being generated with OpenSpec and the assistant.</p>
+        <p><strong>In everyday terms:</strong> this is like writing the instructions and checklist before building something. <strong>OpenSpec</strong> is the way these documents are organized; it is not the AI model itself.</p>
+        <p><strong>People's responsibility:</strong> decide whether the written plan solves the real business problem and approve its scope and data use.</p>
+
+        <h3>2. Help build the first working lookup</h3>
+        <p><strong>Recorded result:</strong> the AI-coauthored ticket-lookup checkpoint <code>0c099be</code> added the search behavior and OpenSpec records.</p>
+        <p><strong>AI-assisted work:</strong> reading the exported ticket data, finding a known ticket number, narrowing down descriptions, asking Copilot to rank candidates and returning results from the source records. The associated task list also records tests and documentation work.</p>
+        <p><strong>In everyday terms:</strong> AI helped write the instructions that the computer follows. A working answer still needed to be checked against the agreed examples.</p>
+
+        <h3>3. Improve the interface through feedback</h3>
+        <p><strong>Example requests:</strong> "Call the application SIP Tickets Miner; make English the default and add Italian," and "Put the user's messages on the right, Miner's on the left, and offer light and dark themes."</p>
+        <p><strong>AI-assisted work:</strong> revise the page layout, labels, language selector and theme controls. The development history records these iterations, and AI-coauthored interface commits such as <code>47ed712</code> describe the changes.</p>
+        <p><strong>In everyday terms:</strong> the team did not have to accept the first design. They asked for changes, saw the result and refined it.</p>
+
+        <h3>4. Add and refine features as the requirements changed</h3>
+        <p><strong>Latest example request:</strong> "Make expert recommendation use an AI call as well."</p>
+        <p><strong>AI-assisted work:</strong> change the expert feature from normal keyword-score voting to Copilot ranking; include a reason and supporting tickets; reject unsupported names and tickets; retain the earlier calculation as a backup. Commit <code>9b743fa</code> records this change.</p>
+        <p><strong>In everyday terms:</strong> the team changed what they wanted, and the assistant helped update the connected parts rather than just changing the wording on the screen.</p>
+
+        <h3>5. Help write tests and explain the result</h3>
+        <p><strong>AI-assisted work:</strong> add automatic checks for invented people and tickets, empty results, maximum result counts and failed AI replies. Update the specification, OpenSpec records and user guides so they describe the new behavior. The latest documentation checkpoint is <code>5d90084</code>.</p>
+        <p><strong>What a test means:</strong> the program is given an input and its answer is compared with an expected result. Many of these tests use a made-up AI reply so the program's safeguards can be checked reliably and without an online call.</p>
+        <p><strong>What a test does not mean:</strong> a test using a made-up AI reply cannot prove that the real AI will always choose the right ticket. Live, approved-data demonstrations and human review remain necessary.</p>
+
+        <div class="say">
+          <strong>Suggested words to say</strong>
+          <p>"We used AI as a development assistant. It helped turn requests into a plan, write and revise code, improve the interface, add tests and update the guides. We worked through feedback rather than one perfect prompt. People still have to approve the requirements, check the results and decide which data may be used."</p>
+        </div>
+
+        <h3>Separately: what AI does when someone uses the app</h3>
+        <ol class="flow">
+          <li><strong>The PM writes a problem.</strong> The application reads the exported ticket list on the computer.</li>
+          <li><strong>A quick word-based search makes a shortlist.</strong> It selects up to 30 potentially useful records. Its technical name is BM25; think of it as narrowing a filing cabinet to a small pile.</li>
+          <li><strong>Selected information goes to Copilot online.</strong> Depending on the page, Copilot ranks tickets, chooses a category or ranks people. It receives the question and relevant fields from the shortlisted records, not the full table.</li>
+          <li><strong>The program restricts the answer.</strong> It checks selected identifiers against the shortlist. For expert recommendations it also checks that the evidence ticket belongs to the named assignee.</li>
+          <li><strong>The PM sees suggestions and checks them.</strong> Ticket details come from the source data; explanations can come from AI. If the AI call fails, a labeled local backup can be used.</li>
+        </ol>
+        <p><strong>Important distinction:</strong> AI-assisted development is how the tool was built. AI-assisted ranking is how parts of the tool work after it has been built. Neither makes it an automatically correct decision-maker.</p>
+      </section>
+
+      <section id="limitations" class="chapter" aria-labelledby="limitations-title">
+        <p class="eyebrow">5 / 5 &middot; About 3 minutes</p>
+        <h2 id="limitations-title">Known limitations and team learning</h2>
+        <p><strong>Main message:</strong> this PoC demonstrates an approach. It is not yet a production-ready, fully private or fully accurate service.</p>
+        <h3>Be open about the limitations</h3>
+        <ul>
+          <li><strong>Privacy needs a decision.</strong> The original brief expected generated data and no client data leaving the computer. The current approach uses a real export and can send the question and up to 30 snippets to Copilot for all three features. A locally running page does not mean locally running AI. Obtain approval or use properly anonymized or synthetic data before a live AI demo.</li>
+          <li><strong>It reads a snapshot.</strong> A ticket may have changed since the export. Miner cannot confirm today's live status.</li>
+          <li><strong>Different wording can hide a match.</strong> The first search looks for overlapping words. An English question may miss an Italian record. AI cannot select a relevant ticket it was never shown.</li>
+          <li><strong>Some labels are unconfirmed.</strong> The issue-type name map is currently empty. Status names use a partial mapping that needs PM confirmation; unknown values are shown as codes.</li>
+          <li><strong>Percentages are not measured accuracy.</strong> Expert percentages normally come from Copilot's estimate. Category percentages come from the share of local search scores. Expert backup percentages also come from search scores. None is a proven probability of success.</li>
+          <li><strong>Past assignment is not current availability.</strong> The tool does not know workloads, absences, current team membership or who actually resolved a task. Frequent assignees and common categories may dominate suggestions.</li>
+          <li><strong>Waiting time and account setup matter.</strong> AI calls can take tens of seconds, and all three pages currently require Copilot to be ready before analysis requests are accepted.</li>
+          <li><strong>It is a single-user demonstration.</strong> There is no live ticket-system integration, shared-user login or ticket editing. Keep it on the local computer rather than exposing it as a public service.</li>
+        </ul>
+        <h3>Learning to explain, grounded in this project</h3>
+        <ol>
+          <li><strong>Clear requests make work easier to check.</strong> "Show up to three matches from these records" is more useful than "build a smart chatbot."</li>
+          <li><strong>AI output needs boundaries.</strong> Selecting from known tickets and checking evidence is safer than accepting arbitrary names and numbers.</li>
+          <li><strong>Test failures and empty results too.</strong> A convincing example is not enough; wrong IDs, unrelated questions and failed AI calls matter.</li>
+          <li><strong>Keep the documents aligned with the product.</strong> Adding AI to expert ranking changed its behavior, dependencies and privacy implications, so the guides and specification had to change too.</li>
+          <li><strong>Do not confuse a working PoC with proven business value.</strong> Next, measure search time, relevant-result rates and user feedback on a reviewed set of examples.</li>
+        </ol>
+        <div class="say">
+          <strong>Suggested closing words</strong>
+          <p>"Miner shows how we can turn descriptions of problems into useful ticket and people suggestions. AI helped us build the tool and helps rank the results, but the records and human review remain essential. Before wider use, we need approved data handling, confirmed labels and more systematic testing."</p>
+        </div>
+        <h3>Final rehearsal checklist</h3>
+        <ul class="checklist">
+          <li>Agree who presents the problem, operates the demo and explains development.</li>
+          <li>Resolve demo-data approval and prepare safe examples.</li>
+          <li>Confirm expected outputs and record each acceptance check as passed, failed or not run.</li>
+          <li>Complete the pending categorization and expert-page browser checks.</li>
+          <li>Confirm the status and category labels, or clearly present them as unresolved.</li>
+          <li>Prepare a backup example and explain whether it is live or recorded.</li>
+          <li>Do not claim measured savings, perfect accuracy, fully offline AI or automatic expert availability.</li>
+        </ul>
+      </section>
+
+      <aside class="reference" aria-labelledby="glossary-title">
+        <h2 id="glossary-title">Small glossary</h2>
+        <dl>
+          <dt>Ticket / assignee / category</dt>
+          <dd>A recorded job or issue / the person assigned to it / the type of issue it belongs to.</dd>
+          <dt>CSV / export</dt>
+          <dd>A table saved as a text file / a copy of records taken out of another system at a point in time.</dd>
+          <dt>AI / LLM / GitHub Copilot</dt>
+          <dd>Artificial intelligence / a language model that processes text / the online AI service used by this project.</dd>
+          <dt>Prompt / shortlist / ranking</dt>
+          <dd>An instruction to AI / a smaller set of possible matches / putting those matches in order.</dd>
+          <dt>Fallback</dt>
+          <dd>A simpler backup method used when the normal AI ranking call fails.</dd>
+          <dt>PoC / acceptance criterion / unit test</dt>
+          <dd>An early version to test an idea / a specific condition for accepting a result / an automatic check of a small part of the program.</dd>
+        </dl>
+      </aside>
+
+    </main>
+    <footer>
+      <p>SIP Tickets Miner &middot; Presentation planning guide, not a test certificate. Keep the distinction between documented requirements, observed results and open decisions clear.</p>
+    </footer>
+  </div>
+</body>
+</html>

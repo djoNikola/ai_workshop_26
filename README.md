@@ -79,6 +79,13 @@ local BM25 shortlist is sent to Copilot for ranking; only assignees and tickets
 from that shortlist can appear in the result. The included CSV is a real
 export: obtain approval or anonymize the data before using Copilot with it.
 
+## Presentation plan
+
+Open [`presentation-plan.html`](presentation-plan.html) directly in a browser for
+a plain-English presentation plan covering the problem, features, acceptance
+checks, AI-assisted development and known limitations. It is a standalone reading
+guide, separate from the running app, and can be printed or saved as a PDF.
+
 ## Tests
 
 Run the chatbot unit tests from the project root:
