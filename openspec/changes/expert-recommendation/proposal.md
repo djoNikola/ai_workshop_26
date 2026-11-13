@@ -5,7 +5,7 @@ When a problem comes in, the PM wants to know who can solve it. In `resources/is
 ## What Changes
 
 - Add a page at `/recommend` and `POST /api/recommend` in the existing local server. The PM describes a problem and gets 2-3 recommended people.
-- The recommendation uses the 5 most relevant assigned tickets from the existing BM25 shortlist; assignees are ranked by the summed score of their tickets.
+- The BM25 shortlist (unassigned tickets dropped) is sent to Copilot, which ranks up to 3 assignees with a confidence, a reason and the supporting tickets. People and tickets outside the shortlist are dropped. If Copilot fails, assignees are ranked locally by the summed BM25 score of their tickets among the 5 most relevant assigned tickets.
 - Each recommended person is shown with the similar tickets they handled.
 - Links to the new page are added on `/` and `/categorize`, and the new page links back to both.
 
@@ -19,9 +19,9 @@ When a problem comes in, the PM wants to know who can solve it. In `resources/is
 
 ## Impact
 
-- `chatbot/ticket_lookup.py`: `recommend()`.
-- `chatbot/sip-chatbot-web.py`: route `/recommend`, endpoint `/api/recommend` (same Host/Origin checks; no Copilot needed).
+- `chatbot/ticket_lookup.py`: `recommend()` (LLM ranking), `recommend_local()` (fallback).
+- `chatbot/sip-chatbot-web.py`: route `/recommend`, endpoint `/api/recommend` (same Host/Origin and Copilot-ready checks).
 - New `chatbot/sip-recommend.html`; link added to `sip-chatbot.html` and `sip-categorize.html`.
 - `SPEC.md` §14, `chatbot/README.md`.
-- Data boundary: purely local, nothing is sent to an LLM.
-- Out of scope: availability or workload of people, contacting them, LLM re-ranking.
+- Data boundary: the description and ≤30 assigned ticket snippets (`pkey`, `summary`, trimmed description, `ASSIGNEE`) are sent to Copilot.
+- Out of scope: availability or workload of people, contacting them.

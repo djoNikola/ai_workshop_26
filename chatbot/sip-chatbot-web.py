@@ -258,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, "{}")
         try:
             if self.path == "/api/recommend":
-                result = ticket_lookup.recommend(prompt, load_index())
+                result = ticket_lookup.recommend(prompt, load_index(), run_copilot, lang)
             else:
                 handler = ticket_lookup.categorize if self.path == "/api/categorize" else ticket_lookup.lookup
                 result = handler(prompt, load_index(), run_copilot)

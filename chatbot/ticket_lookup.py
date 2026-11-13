@@ -28,12 +28,20 @@ MESSAGES = {
         "not_found": "Ticket {pkey} was not found.",
         "llm_unavailable": "LLM ranking was unavailable; showing the best keyword matches.",
         "no_match": "No matching ticket found. Try adding more detail (system, site, error).",
+        "no_experts": "No similar assigned tickets found. Try adding more detail (system, site, error).",
+        "experts_llm": "Recommendations are ranked by Copilot from similar assigned tickets.",
+        "experts_local": "Recommendations are based on the {total} closest assigned tickets.",
+        "assigned": "Assigned on {count} of the {total} closest tickets.",
     },
     "it": {
         "exact": "Corrispondenza esatta con l'ID del ticket.",
         "not_found": "Il ticket {pkey} non è stato trovato.",
         "llm_unavailable": "Il ranking LLM non è disponibile; vengono mostrate le migliori corrispondenze per parole chiave.",
         "no_match": "Nessun ticket corrispondente trovato. Prova ad aggiungere più dettagli (sistema, sito, errore).",
+        "no_experts": "Nessun ticket assegnato simile trovato. Aggiungi dettagli (sistema, sede, errore).",
+        "experts_llm": "Raccomandazioni ordinate da Copilot in base ai ticket assegnati simili.",
+        "experts_local": "Raccomandazioni basate sui {total} ticket assegnati più simili.",
+        "assigned": "Assegnato su {count} dei {total} ticket più simili.",
     },
 }
 
@@ -227,16 +235,102 @@ def lookup(query, index, llm, lang=DEFAULT_LANG):
     return {"reply": format_reply(notes, candidates), "candidates": candidates}
 
 
-def recommend(query, index):
+def build_recommend_prompt(query, shortlist):
+    """Only the allowed fields for the shortlisted assigned tickets are sent."""
+    rows = [
+        {"pkey": t["pkey"], "summary": t["summary"], "description": t["description"], "assignee": t["assignee"]}
+        for t in shortlist
+    ]
+    return (
+        "You recommend people (assignees) who can solve a client's problem, based on similar past support tickets "
+        "they handled. The description may be Italian or English.\n"
+        f"Pick at most {MAX_EXPERTS} assignees from the tickets below, best first. For each, list the pkeys of the "
+        f"tickets that really match the description and were handled by that assignee (at most "
+        f"{RECOMMENDATION_TICKETS} tickets in total), a confidence from 0 to 100, and a short reason. "
+        "Return an empty list if no ticket is relevant. Use only assignee and pkey values from the list.\n"
+        'Reply with JSON only, no other text, in the form '
+        '{"experts":[{"assignee":"name","pkeys":["BTU-1"],"confidence":80,'
+        '"reason":"one short sentence in the language of the description"}]}\n\n'
+        f"Client description:\n{query}\n\nTickets:\n{json.dumps(rows, ensure_ascii=False)}\n"
+    )
+
+
+def parse_recommendation(output, shortlist):
+    """Returns [(assignee, [pkeys], confidence, reason)] limited to the shortlist; raises ValueError on unusable output.
+
+    An expert is kept only if it cites at least one shortlisted ticket assigned to them."""
+    owner = {t["pkey"]: t["assignee"] for t in shortlist}
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"\{", output or ""):
+        try:
+            data, _ = decoder.raw_decode(output[m.start():])
+        except ValueError:
+            continue
+        if not (isinstance(data, dict) and isinstance(data.get("experts"), list)):
+            continue
+        experts, used = [], set()
+        for item in data["experts"]:
+            if not isinstance(item, dict) or len(experts) >= MAX_EXPERTS:
+                continue
+            assignee = str(item.get("assignee", "")).strip()
+            if assignee in [e[0] for e in experts]:
+                continue
+            raw = item.get("pkeys") if isinstance(item.get("pkeys"), list) else []
+            pkeys = []
+            for p in raw:
+                p = str(p).strip().upper()
+                if owner.get(p) == assignee and p not in used and len(used) < RECOMMENDATION_TICKETS:
+                    pkeys.append(p)
+                    used.add(p)
+            if not pkeys:
+                continue
+            try:
+                confidence = max(0, min(100, round(float(item.get("confidence")))))
+            except (TypeError, ValueError):
+                confidence = 0
+            experts.append((assignee, pkeys, confidence, str(item.get("reason", "")).strip()))
+        return experts
+    raise ValueError("no valid JSON result in LLM output")
+
+
+def recommend(query, index, llm, lang=DEFAULT_LANG):
+    """llm(prompt) -> str. Copilot ranks assignees of similar assigned tickets; local BM25 vote is the fallback."""
+    msg = MESSAGES.get(lang, MESSAGES[DEFAULT_LANG])
+    shortlist = [t for t, _ in index.shortlist_scored(query) if t["assignee"] != "Unassigned"]
+    if not shortlist:
+        return {"reply": msg["no_experts"], "notes": [], "experts": []}
+    try:
+        ranked = parse_recommendation(llm(build_recommend_prompt(query.strip(), shortlist)), shortlist)
+    except Exception:
+        logger.exception("LLM expert ranking failed; falling back to keyword-based recommendation")
+        result = recommend_local(query, index, lang)
+        result["notes"] = [msg["llm_unavailable"]]
+        return result
+    if not ranked:
+        return {"reply": msg["no_experts"], "notes": [], "experts": []}
+    summaries = {t["pkey"]: t["summary"] for t in shortlist}
+    experts = [
+        {
+            "assignee": assignee,
+            "confidence": confidence,
+            "tickets": [{"pkey": p, "summary": summaries[p]} for p in pkeys],
+            "reason": reason,
+        }
+        for assignee, pkeys, confidence, reason in ranked
+    ]
+    return {"reply": msg["experts_llm"], "notes": [], "experts": experts}
+
+
+def recommend_local(query, index, lang=DEFAULT_LANG):
     """Recommend assignees by aggregating BM25 scores from the five closest assigned tickets."""
+    msg = MESSAGES.get(lang, MESSAGES[DEFAULT_LANG])
     similar = [
         (ticket, score)
         for ticket, score in index.shortlist_scored(query)
         if ticket["assignee"] != "Unassigned"
     ][:RECOMMENDATION_TICKETS]
     if not similar:
-        message = "No similar assigned tickets found. Try adding more detail (system, site, error)."
-        return {"reply": message, "notes": [], "experts": []}
+        return {"reply": msg["no_experts"], "notes": [], "experts": []}
 
     by_assignee = {}
     for ticket, score in similar:
@@ -251,12 +345,11 @@ def recommend(query, index):
             "assignee": assignee,
             "confidence": round(100 * data["score"] / total_score),
             "tickets": data["tickets"],
-            "reason": f"Assigned on {len(data['tickets'])} of the {len(similar)} closest tickets.",
+            "reason": msg["assigned"].format(count=len(data["tickets"]), total=len(similar)),
         }
         for assignee, data in ranked[:MAX_EXPERTS]
     ]
-    return {"reply": "Recommendations are based on the five closest assigned tickets.",
-            "notes": [], "experts": experts}
+    return {"reply": msg["experts_local"].format(total=len(similar)), "notes": [], "experts": experts}
 
 
 def category_scores(scored):

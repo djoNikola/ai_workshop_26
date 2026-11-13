@@ -146,7 +146,13 @@ class RecommendTests(unittest.TestCase):
 
     @staticmethod
     def ticket(pkey, assignee):
-        return {"pkey": pkey, "summary": "sample ticket", "assignee": assignee}
+        return {"pkey": pkey, "summary": "sample ticket", "description": "", "assignee": assignee}
+
+    @staticmethod
+    def llm_experts(*experts):
+        return lambda prompt: json.dumps({"experts": [
+            {"assignee": a, "pkeys": list(p), "confidence": c, "reason": "ok"} for a, p, c in experts
+        ]})
 
     def test_aggregates_top_five_assigned_tickets(self):
         rows = [
@@ -158,17 +164,60 @@ class RecommendTests(unittest.TestCase):
             (self.ticket("X-5", "carol"), 0.5),
             (self.ticket("X-6", "dave"), 0.1),
         ]
-        result = tl.recommend("sample", self.ScoredIndex(rows))
+        result = tl.recommend_local("sample", self.ScoredIndex(rows))
         self.assertEqual([x["assignee"] for x in result["experts"]], ["ana", "bob", "carol"])
         self.assertEqual([x["pkey"] for x in result["experts"][0]["tickets"]], ["X-1", "X-3"])
         self.assertEqual([x["pkey"] for x in result["experts"][2]["tickets"]], ["X-5"])
         self.assertEqual(len(result["experts"]), tl.MAX_EXPERTS)
 
-    def test_no_assigned_matches_returns_empty_experts(self):
+    def test_no_assigned_matches_skips_llm(self):
         index = self.ScoredIndex([(self.ticket("X-1", "Unassigned"), 1.0)])
-        result = tl.recommend("sample", index)
+        result = tl.recommend("sample", index, lambda p: self.fail("LLM called"))
         self.assertEqual(result["experts"], [])
         self.assertIn("No similar assigned tickets", result["reply"])
+
+    def test_llm_ranks_experts_and_prompt_excludes_unassigned(self):
+        index = self.ScoredIndex([
+            (self.ticket("X-0", "Unassigned"), 9.0),
+            (self.ticket("X-1", "ana"), 5.0),
+            (self.ticket("X-2", "bob"), 3.0),
+        ])
+        prompts = []
+
+        def llm(prompt):
+            prompts.append(prompt)
+            return self.llm_experts(("bob", ["x-2"], 90), ("ana", ["X-1"], 40))(prompt)
+
+        result = tl.recommend("sample", index, llm)
+        rows = json.loads(prompts[0].split("Tickets:\n", 1)[1])
+        self.assertEqual([r["pkey"] for r in rows], ["X-1", "X-2"])
+        self.assertEqual(set(rows[0]), {"pkey", "summary", "description", "assignee"})
+        self.assertEqual([(x["assignee"], x["confidence"]) for x in result["experts"]], [("bob", 90), ("ana", 40)])
+        self.assertEqual(result["experts"][0]["tickets"], [{"pkey": "X-2", "summary": "sample ticket"}])
+
+    def test_llm_cannot_invent_people_or_tickets(self):
+        index = self.ScoredIndex([(self.ticket("X-1", "ana"), 5.0), (self.ticket("X-2", "bob"), 3.0)])
+        llm = self.llm_experts(("eve", ["X-1"], 99), ("ana", ["X-2", "X-9"], 50), ("bob", ["X-2"], 30))
+        result = tl.recommend("sample", index, llm)
+        self.assertEqual([x["assignee"] for x in result["experts"]], ["bob"])
+
+    def test_llm_empty_list_means_no_experts(self):
+        index = self.ScoredIndex([(self.ticket("X-1", "ana"), 5.0)])
+        result = tl.recommend("sample", index, self.llm_experts())
+        self.assertEqual(result["experts"], [])
+
+    def test_llm_failure_falls_back_to_local_vote(self):
+        index = self.ScoredIndex([(self.ticket("X-1", "ana"), 5.0), (self.ticket("X-2", "bob"), 3.0)])
+        with self.assertLogs("ticket_lookup", level="ERROR"):
+            result = tl.recommend("sample", index, lambda p: "not JSON", "it")
+        self.assertEqual([x["assignee"] for x in result["experts"]], ["ana", "bob"])
+        self.assertEqual(result["notes"], [tl.MESSAGES["it"]["llm_unavailable"]])
+
+    def test_evidence_limited_to_five_tickets(self):
+        rows = [(self.ticket(f"X-{i}", "ana"), 1.0) for i in range(8)]
+        llm = self.llm_experts(("ana", [f"X-{i}" for i in range(8)], 70))
+        result = tl.recommend("sample", self.ScoredIndex(rows), llm)
+        self.assertEqual(len(result["experts"][0]["tickets"]), tl.RECOMMENDATION_TICKETS)
 
 
 class CategorizeTests(unittest.TestCase):

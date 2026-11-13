@@ -52,7 +52,6 @@
       noExperts: "No similar assigned tickets found. Try adding more detail (system, site, error).",
       relevance: "Relevance",
       solved: count => "solved " + count + " similar ticket(s)",
-      assigned: (count, total) => "Assigned on " + count + " of the " + total + " closest tickets.",
       error: "Error: ",
     },
     it: {
@@ -71,7 +70,6 @@
       noExperts: "Nessun ticket assegnato simile trovato. Aggiungi dettagli (sistema, sede, errore).",
       relevance: "Rilevanza",
       solved: count => "ticket simili risolti: " + count,
-      assigned: (count, total) => "Assegnato su " + count + " dei " + total + " ticket più simili.",
       error: "Errore: ",
     },
   };
@@ -144,8 +142,8 @@
       card.append(
         el("div", expert.assignee, "expert-name"),
         el("div", t().relevance + ": " + expert.confidence + "% · " + t().solved(expert.tickets.length), "pill expert-meta"),
-        el("div", t().assigned(expert.tickets.length, 5), "expert-reason"),
       );
+      if (expert.reason) card.append(el("div", expert.reason, "expert-reason"));
       for (const ticket of expert.tickets) {
         const evidence = el("div", "", "expert-ticket");
         evidence.append(el("strong", ticket.pkey), " - " + ticket.summary);
@@ -177,7 +175,7 @@
       const response = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, lang }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.reply || "HTTP " + response.status);

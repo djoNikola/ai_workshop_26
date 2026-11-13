@@ -4,20 +4,22 @@
 
 ## Goals / Non-Goals
 
-**Goals:** recommend 2-3 people from the 4-5 most relevant tickets, on a new URL, reusing the shortlist. Stay local and stdlib-only.
+**Goals:** recommend 2-3 people from similar assigned tickets, on a new URL, reusing the shortlist and the existing Copilot CLI call. Stay stdlib-only.
 
-**Non-Goals:** LLM use, workload or availability, changing existing endpoints.
+**Non-Goals:** workload or availability, changing existing endpoints.
 
 ## Decisions
 
-1. **Separate URL.** `GET /recommend` serves the page; `POST /api/recommend` takes `{"prompt": ...}` and returns `{"reply", "experts", "tickets"}`. Same Host/Origin checks.
-2. **Tickets.** Take the BM25 shortlist, drop unassigned tickets, keep the top 5 (`RECOMMEND_TICKETS`). Ticket IDs in the text are plain text.
-3. **People.** Score per assignee = sum of BM25 scores of their tickets among those 5. Return the top 3 (`RECOMMEND_EXPERTS`), ties broken by name. Relevance % = share of the total score of the 5 tickets. If fewer people exist, fewer are returned.
-4. **Local only.** No Copilot call, so the page works even when Copilot is not installed or logged in, and no data leaves the machine. Alternative (LLM re-rank) rejected: ASSIGNEE is ground truth in the CSV, and the extra call adds latency and privacy risk.
-5. **No match.** If no assigned ticket shares terms with the description, answer "No expert could be recommended" and list nobody.
+1. **Separate URL.** `GET /recommend` serves the page; `POST /api/recommend` takes `{"prompt": ..., "lang": ...}` and returns `{"reply", "notes", "experts"}`. Same Host/Origin and Copilot-ready checks as the other pages.
+2. **Tickets.** Take the BM25 shortlist (≤30) and drop unassigned tickets. Ticket IDs in the text are plain text.
+3. **LLM ranking.** One Copilot call with the description and the assigned shortlist (`pkey`, `summary`, `description`, `assignee`). JSON reply: up to 3 `{assignee, pkeys, confidence, reason}`, best first, ≤5 tickets in total. Assignees outside the shortlist and pkeys not owned by that assignee are dropped; an expert with no valid ticket is dropped. Summaries come from the CSV. Rationale: the LLM judges which similar tickets really match and explains why, which BM25 term overlap cannot.
+4. **Fallback.** LLM failure or invalid JSON: score per assignee = sum of BM25 scores of their tickets among the 5 most relevant assigned tickets; top 3, ties by name; relevance % = share of the total; notice "LLM ranking was unavailable".
+5. **No match.** If no assigned ticket shares terms with the description, the LLM is not called and nobody is listed. An empty LLM list also lists nobody.
 
 ## Risks / Trade-offs
 
 - Lexical shortlist: cross-language queries can miss (same as `ticket-lookup`).
+- The description and assignee usernames of ≤30 tickets leave the machine (Copilot), as for the other pages.
+- Confidence is the LLM's own estimate, not a computed score.
 - The assignee of a closed ticket may have left the team; the app cannot know.
 - Heavy assignees (the top assignee has ~15% of tickets) may dominate.

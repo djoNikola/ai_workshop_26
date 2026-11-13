@@ -30,7 +30,7 @@ Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stva
 
 Kategorizacija: `http://localhost:8765/categorize` predlaže `ISSUETYPE` za novi tiket na osnovu sličnih tiketa i Copilot klasifikacije.
 
-Preporuka osoba: `http://localhost:8765/recommend` na osnovu 5 najsličnijih tiketa sa dodeljenim assignee-jem preporučuje do 3 osobe (kolona `ASSIGNEE`). Radi lokalno, bez Copilota.
+Preporuka osoba: `http://localhost:8765/recommend` šalje Copilotu opis i najviše 30 sličnih tiketa sa dodeljenim assignee-jem (ID, naslov, skraćen opis, assignee); Copilot rangira do 3 osobe (kolona `ASSIGNEE`) sa procentom, obrazloženjem i najviše 5 tiketa kao dokazom. Osobe i tiketi van liste se odbacuju. Ako Copilot ne radi, koristi se lokalni zbir BM25 skorova 5 najsličnijih tiketa uz napomenu.
 
 Sve tri stranice dele chat raspored, navigaciju, EN/IT izbor i light/dark temu.
 
@@ -47,7 +47,7 @@ cd chatbot && python3 -m unittest test_ticket_lookup test_sip_chatbot_web
 - `test_ticket_lookup.py` – unit testovi
 - `sip-chatbot.html` – struktura stranice (HTML); mora biti u istom folderu kao server
 - `sip-categorize.html` – chat za predlog `ISSUETYPE`
-- `sip-recommend.html` – chat za lokalnu preporuku assignee-ja
+- `sip-recommend.html` – chat za preporuku assignee-ja
 - `static/style.css` – stilovi stranice
 - `static/app.js` – logika stranice (chat, setup panel, prevodi EN/IT, promena teme)
 - `static/categorize.js` – chat tok za kategorisanje issue-a

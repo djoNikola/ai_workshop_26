@@ -11,7 +11,7 @@ handled similar issues.
 |---|---|
 | [`/`](http://localhost:8765/) | Finds up to three matching tickets. An existing ticket ID is shown first; other matches are ranked from a local BM25 shortlist by GitHub Copilot. |
 | [`/categorize`](http://localhost:8765/categorize) | Suggests an `ISSUETYPE` for a new ticket using similar tickets, with alternatives and examples. Copilot chooses from shortlisted categories; if its ranking call fails, a local weighted vote is used. |
-| [`/recommend`](http://localhost:8765/recommend) | Recommends up to three assignees based on the five closest assigned tickets. The recommendation logic is local and does not send ticket data to Copilot. |
+| [`/recommend`](http://localhost:8765/recommend) | Recommends up to three assignees from similar assigned tickets. Copilot ranks the people from a local BM25 shortlist and explains each choice; if its call fails, a local score vote over the five closest assigned tickets is used. |
 
 The pages have English and Italian text and light and dark themes. Each query is
 independent; the app does not use conversation history.
@@ -26,8 +26,7 @@ independent; the app does not use conversation history.
   and start device-code sign-in.
 
 The web server currently checks Copilot readiness before accepting requests to
-all three analysis endpoints. The expert recommendation calculation itself
-does not call Copilot.
+all three analysis endpoints.
 
 ## Run
 
@@ -56,19 +55,20 @@ file directly.
   fallback results.
 - `categorize()` suggests an issue type from similar tickets, using Copilot
   ranking and a local fallback.
-- `recommend()` aggregates scores for assignees of the closest assigned
-  tickets; it does not call an LLM.
+- `recommend()` asks Copilot to rank assignees of shortlisted assigned
+  tickets, dropping people or tickets not in the shortlist;
+  `recommend_local()` is the score-aggregation fallback.
 - The server exposes `POST /api/chat`, `POST /api/categorize` and
   `POST /api/recommend`. It binds to `127.0.0.1`, checks local Host/Origin
   headers and serves only whitelisted static files.
 
 ## Privacy
 
-The ticket search and categorization features send the query and up to 30
-shortlisted ticket snippets to GitHub Copilot. Search snippets contain the
-ticket ID, summary, description, status and assignee; categorization snippets
-contain the ID, summary, description and `ISSUETYPE`. The expert recommendation
-feature uses the CSV locally and sends nothing to Copilot. The included CSV is
+All three features send the query and up to 30 shortlisted ticket snippets to
+GitHub Copilot. Search snippets contain the ticket ID, summary, description,
+status and assignee; categorization snippets contain the ID, summary,
+description and `ISSUETYPE`; expert recommendation snippets contain the ID,
+summary, description and assignee of assigned tickets. The included CSV is
 a real export: obtain approval or anonymize the data before using Copilot with
 it.
 
