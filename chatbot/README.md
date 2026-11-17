@@ -1,106 +1,106 @@
 
 # SIP Tickets Miner (web chat)
 
-Lokalni web chat za PM-a: upiše opis problema klijenta (IT/EN) ili broj tiketa, a chat vraća do 3 kandidata
-(ID, naslov, status, assignee, kratko obrazloženje). Podaci se čitaju iz `../resources/issues_export.csv`.
+Local web chat for project managers: enter a description of a customer's problem (IT/EN) or a ticket number, and the chat returns up to 3 candidates
+(ID, title, status, assignee, and a short explanation). Data is read from `../resources/issues_export.csv`.
 
-## Kako radi
+## How it works
 
-1. Ako poruka sadrži ID (npr. `BTU-4114`) i tiket postoji, prikazuje se prvi. Ako ne postoji, chat to kaže i traži dalje po ostatku teksta.
-2. Lokalna BM25 pretraga bira do 30 kandidata iz CSV-a.
-3. Copilot CLI (`copilot --silent`, prompt preko stdin) rangira te kandidate i vraća JSON; ID, status i assignee uvek se čitaju iz CSV-a.
-4. Ako Copilot ne radi, prikazuju se top 3 lokalna pogotka uz napomenu. Ako ništa ne odgovara: „No matching ticket found“.
+1. If the message contains an ID (e.g. `BTU-4114`) and the ticket exists, it is shown first. If it does not exist, the chat says so and continues searching using the remaining text.
+2. A local BM25 search selects up to 30 candidates from the CSV.
+3. Copilot CLI (`copilot --silent`, with the prompt passed through stdin) ranks those candidates and returns JSON; the ID, status, and assignee are always read from the CSV.
+4. If Copilot is unavailable, the top 3 local matches are shown with a notice. If nothing matches: "No matching ticket found".
 
-Svaki upit je nezavistan (nema `--continue`). Labele statusa su u `STATUS_LABELS` u `ticket_lookup.py`
-(1/3/4/5/6 prema Jira podrazumevanim vrednostima — PM treba da potvrdi); nepoznati kodovi se prikazuju kao `Status <kod>`.
+Each query is independent (no `--continue`). Status labels are defined in `STATUS_LABELS` in `ticket_lookup.py`
+(1/3/4/5/6 follow Jira defaults — the project manager should confirm them); unknown codes are displayed as `Status <code>`.
 
-**Jezik interfejsa:** podrazumevano engleski; dugme `EN`/`IT` gore desno prebacuje na italijanski i izbor se pamti
-u browseru (`localStorage`). Tekstovi stranice su u objektu `T` u `static/app.js`, a fiksne napomene chata
-(„not found“, „no match“…) u `MESSAGES` u `ticket_lookup.py` (`/api/chat` prima `lang`: `en` ili `it`).
-Obrazloženje koje daje Copilot ostaje na jeziku upita.
+**Interface language:** English by default; the `EN`/`IT` button in the top-right corner switches to Italian, and the choice is saved
+in the browser (`localStorage`). Page text is defined in the `T` object in `static/app.js`, and fixed chat notices
+("not found", "no match", etc.) are in `MESSAGES` in `ticket_lookup.py` (`/api/chat` accepts `lang`: `en` or `it`).
+Copilot's explanation remains in the language of the query.
 
-**Tema:** svetla i tamna (obe prigušene). Pri prvom otvaranju prati sistemsku temu, a ikonica sunca/meseca levo od
-izbora jezika je menja; izbor se pamti u browseru. Boje su CSS promenljive u `static/style.css`
+**Theme:** light and dark (both muted). On the first visit, the page follows the system theme. The sun/moon icon to the left of
+the language selector switches themes; the choice is saved in the browser. Colors are CSS variables in `static/style.css`
 (`[data-theme="light"]` / `[data-theme="dark"]`).
 
-**Privatnost:** upit i najviše 30 isečaka tiketa (ID, naslov, skraćen opis, status, assignee) šalju se Copilot servisu.
-Pošto je CSV pravi export, to treba odobriti ili podatke anonimizirati pre stvarne upotrebe (vidi `SPEC.md` §10).
+**Privacy:** the query and up to 30 ticket excerpts (ID, title, shortened description, status, and assignee) are sent to the Copilot service.
+Since the CSV is a real export, this must be approved or the data anonymized before actual use (see `SPEC.md` §10).
 
-## Stranice
+## Pages
 
-Kategorizacija: `http://localhost:8765/categorize` predlaže `ISSUETYPE` za novi tiket na osnovu sličnih tiketa i Copilot klasifikacije.
+Categorization: `http://localhost:8765/categorize` suggests an `ISSUETYPE` for a new ticket based on similar tickets and Copilot classification.
 
-Preporuka osoba: `http://localhost:8765/recommend` šalje Copilotu opis i najviše 30 sličnih tiketa sa dodeljenim assignee-jem (ID, naslov, skraćen opis, assignee); Copilot rangira do 3 osobe (kolona `ASSIGNEE`) sa procentom, obrazloženjem i najviše 5 tiketa kao dokazom. Osobe i tiketi van liste se odbacuju. Ako Copilot ne radi, koristi se lokalni zbir BM25 skorova 5 najsličnijih tiketa uz napomenu.
+Assignee recommendations: `http://localhost:8765/recommend` sends Copilot a description and up to 30 similar tickets with an assignee (ID, title, shortened description, and assignee); Copilot ranks up to 3 people (the `ASSIGNEE` column), providing a percentage, an explanation, and up to 5 supporting tickets. People and tickets outside the list are discarded. If Copilot is unavailable, the local sum of BM25 scores for the 5 most similar tickets is used, with a notice.
 
-Sve tri stranice dele chat raspored, navigaciju, EN/IT izbor i light/dark temu.
+All three pages share the chat layout, navigation, EN/IT selector, and light/dark theme.
 
-## Testovi
+## Tests
 
 ```bash
 cd chatbot && python3 -m unittest test_ticket_lookup test_sip_chatbot_web
 ```
 
-## Fajlovi
+## Files
 
-- `sip-chatbot-web.py` – lokalni server (samo standardna biblioteka, bez `pip install`)
-- `ticket_lookup.py` – učitavanje CSV-a, pretraga i rangiranje
-- `test_ticket_lookup.py` – unit testovi
-- `sip-chatbot.html` – struktura stranice (HTML); mora biti u istom folderu kao server
-- `sip-categorize.html` – chat za predlog `ISSUETYPE`
-- `sip-recommend.html` – chat za preporuku assignee-ja
-- `static/style.css` – stilovi stranice
-- `static/app.js` – logika stranice (chat, setup panel, prevodi EN/IT, promena teme)
-- `static/categorize.js` – chat tok za kategorisanje issue-a
-- `static/theme.js` – primenjuje sačuvanu/sistemsku temu pre iscrtavanja stranice
-- `sip-chatbot.py` – originalna Tkinter verzija (opciono)
+- `sip-chatbot-web.py` – local server (standard library only, no `pip install` required)
+- `ticket_lookup.py` – CSV loading, search, and ranking
+- `test_ticket_lookup.py` – unit tests
+- `sip-chatbot.html` – page structure (HTML); must be in the same folder as the server
+- `sip-categorize.html` – chat for suggesting an `ISSUETYPE`
+- `sip-recommend.html` – chat for assignee recommendations
+- `static/style.css` – page styles
+- `static/app.js` – page logic (chat, setup panel, EN/IT translations, theme switching)
+- `static/categorize.js` – chat flow for issue categorization
+- `static/theme.js` – applies the saved/system theme before rendering the page
+- `sip-chatbot.py` – original Tkinter version (optional)
 
-## Preduslovi
+## Prerequisites
 
 - Python 3
-- Node.js sa `npm` (potreban samo ako Copilot CLI još nije instaliran)
-- GitHub nalog sa aktivnom Copilot pretplatom
+- Node.js with `npm` (required only if Copilot CLI is not already installed)
+- A GitHub account with an active Copilot subscription
 
-## Pokretanje servera
+## Starting the server
 
 ```powershell
 python sip-chatbot-web.py
 ```
 
-Ako `python` nije dostupan u PATH-u, koristi `py sip-chatbot-web.py` ili punu putanju do `python.exe`.
+If `python` is not available in PATH, use `py sip-chatbot-web.py` or the full path to `python.exe`.
 
-Server sluša na `http://localhost:8765/` i sam otvara browser. Prozor sa serverom ostavi otvoren dok koristiš chat. `Ctrl+C` gasi server.
+The server listens on `http://localhost:8765/` and opens the browser automatically. Keep the server window open while using the chat. Press `Ctrl+C` to stop the server.
 
-Stranicu otvaraj uvek preko `http://localhost:8765/`. Dvoklik na HTML fajl ne radi, jer tada nema servera.
+Always open the page through `http://localhost:8765/`. Double-clicking the HTML file does not work because no server is running that way.
 
-## Prvo korišćenje
+## First use
 
-Gore na stranici se prikazuje panel sa trenutnim stanjem:
+A panel at the top of the page shows the current status:
 
-1. **Copilot is not installed** – klikni „Yes, install“. Server izvršava `npm install -g @github/copilot` i uživo prikazuje izlaz.
-2. **Not signed in** – klikni „Sign in“. Otvori prikazani link (`https://github.com/login/device`), unesi prikazani kod i odobri pristup. Stranica sama prepozna prijavu.
-3. **Spreman** – panel nestaje i možeš da pišeš poruke.
+1. **Copilot is not installed** – click "Yes, install". The server runs `npm install -g @github/copilot` and streams the output live.
+2. **Not signed in** – click "Sign in". Open the displayed link (`https://github.com/login/device`), enter the displayed code, and authorize access. The page detects the sign-in automatically.
+3. **Ready** – the panel disappears, and you can write messages.
 
-Dok Copilot nije spreman, dugme „Send“ je onemogućeno.
+The "Send" button is disabled until Copilot is ready.
 
-## Korišćenje chata
+## Using the chat
 
-- Upiši poruku i pritisni Enter ili „Send“.
-- Prvi odgovor može da traje desetak sekundi ili duže, jer se za svaku poruku pokreće `copilot`.
-- Poruke se šalju jedna po jedna. Svaki upit je nezavistan; prethodne poruke se ne uzimaju u obzir.
+- Type a message and press Enter or click "Send".
+- The first response may take around ten seconds or longer because `copilot` is launched for each message.
+- Messages are sent one at a time. Each query is independent; previous messages are not taken into account.
 
-## Rešavanje problema
+## Troubleshooting
 
-| Problem | Rešenje |
+| Problem | Solution |
 |---|---|
-| „Failed to fetch“ / „Server is not reachable“ | Server nije pokrenut ili je ugašen. Pokreni ga ponovo i osveži stranicu. |
-| Port 8765 je zauzet | Zatvori drugi program na tom portu ili promeni `PORT` u `sip-chatbot-web.py`. |
-| „npm was not found“ | Instaliraj Node.js sa https://nodejs.org pa restartuj terminal. |
-| Instaliran, ali „not in PATH“ | Restartuj terminal i server. |
-| Prijava ne prolazi | Pokreni `copilot login` ručno u terminalu, ili postavi `GH_TOKEN`/`COPILOT_GITHUB_TOKEN`. |
-| „LLM ranking was unavailable“ | U konzoli servera pogledaj `LLM ranking failed` i traceback: beleži se greška CLI poziva ili parsiranja JSON odgovora. Keyword rezultati ostaju dostupni. |
+| "Failed to fetch" / "Server is not reachable" | The server has not been started or has stopped. Restart it and refresh the page. |
+| Port 8765 is already in use | Close the other program using that port or change `PORT` in `sip-chatbot-web.py`. |
+| "npm was not found" | Install Node.js from https://nodejs.org, then restart the terminal. |
+| Installed, but "not in PATH" | Restart the terminal and the server. |
+| Sign-in fails | Run `copilot login` manually in the terminal, or set `GH_TOKEN`/`COPILOT_GITHUB_TOKEN`. |
+| "LLM ranking was unavailable" | Check the server console for `LLM ranking failed` and the traceback: errors from the CLI call or JSON response parsing are logged there. Keyword results remain available. |
 
-## Bezbednost
+## Security
 
-- Server sluša samo na `127.0.0.1`, pa je dostupan samo na tvom računaru.
-- Odbijaju se zahtevi sa stranim `Host` i `Origin` zaglavljem.
-- Svi upiti idu preko Copilot naloga osobe koja je pokrenula server. Nemoj ga izlagati na internet bez prijave korisnika i ograničenja broja zahteva.
+- The server listens only on `127.0.0.1`, so it is accessible only on your computer.
+- Requests with foreign `Host` and `Origin` headers are rejected.
+- All queries use the Copilot account of the person who started the server. Do not expose it to the internet without user authentication and rate limiting.

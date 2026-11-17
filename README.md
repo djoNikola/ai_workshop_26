@@ -18,12 +18,16 @@ independent; the app does not use conversation history.
 
 ## Requirements
 
-- Python 3. The server uses only the Python standard library.
-- The ticket export at `resources/issues_export.csv`.
+- Python 3 (recommended: **3.14**). The server uses only the Python standard
+  library; no pip packages are required.
+- The ticket export at `resources/issues_export.csv`, already there by default.
 - A free local port `8765`.
-- GitHub Copilot CLI installed and signed in for ticket search, category
-  suggestions, and expert recommendations. The setup panel can install the CLI
-  (requires Node.js and npm) and start device-code sign-in.
+- GitHub Copilot CLI (latest stable release), installed and signed in for ticket
+  search, category suggestions, and expert recommendations.
+- Node.js **22 or later**, with its bundled npm, if installing Copilot CLI
+  through npm. The setup panel uses this installation method and can start
+  device-code sign-in. See the [official CLI installation requirements](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli).
+- On Windows, PowerShell **6 or later** for Copilot CLI.
 
 The web server currently checks Copilot readiness before accepting requests to
 all three analysis endpoints.
