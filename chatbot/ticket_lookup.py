@@ -67,6 +67,71 @@ def tokenize(text):
     return [t[:5] for t in tokens if len(t) > 2 and t not in STOPWORDS]
 
 
+# Words that mark a description as English or Italian (the tickets are in Italian).
+# EN_HINTS only holds words that (almost) never occur in the Italian tickets: "in", "a", "on", "data", "report",
+# "server", "login", "list", "password", "screen", "open" (Open LIS), "label" and "update" occur there,
+# so they are left out on purpose.
+EN_HINTS = set(
+    "the is are was were be been being not with this that these those from have has had do does did when "
+    "cannot can can't won't isn't aren't wasn't weren't doesn't don't didn't couldn't shouldn't wouldn't "
+    "haven't hasn't after before error errors working works work should would could there "
+    "it its we our my you your they their please wrong "
+    "of for and but or an to at by any some all also only still than then more "
+    "what why how which where who need needs want wants unable missing broken problem "
+    "user users patient patients sample samples result results printer printing print labels "
+    "send sent receive received save saved saving show shows showing found opened closed updated new".split()
+)
+IT_HINTS = set(
+    "il lo la gli le che non con per di da su e ed un una della del dello delle degli sono era errore quando dopo prima "
+    "funziona lavoro deve dovrebbe nostro nostra mio mia questo questa questi sul sulla nel nella".split()
+)
+TRANSLATION_LIMIT = 1000
+LOG_SHORTLIST = 10
+
+
+def looks_english(text):
+    """True when the text has more English than Italian hint words (ties and no hints at all count as Italian)."""
+    words = re.findall(r"[a-z']+", _norm(text).replace("’", "'"))
+    # "doesn't" matches as a whole word; elided Italian like "l'errore" also counts the word after the
+    # apostrophe ("errore"), but not the elided article, so "all'avvio" does not count as English "all"
+    words += [part for w in words if "'" in w for part in w.split("'")[1:] if part]
+    return sum(w in EN_HINTS for w in words) > sum(w in IT_HINTS for w in words)
+
+
+def build_translation_prompt(query):
+    return (
+        "Translate this support-ticket problem description to Italian. Then add up to 10 alternative Italian words "
+        "or synonyms for the key concepts of this description only, as they would be written in Italian hospital "
+        "and laboratory IT support tickets (for example: vehicles -> mezzi, veicoli). "
+        "Do not add words for concepts the description does not mention. Keep names, codes and acronyms as they are. "
+        "Reply with plain Italian text only.\n\n" + query
+    )
+
+
+def search_text(query, llm):
+    """Text for the BM25 shortlist: an English description gets its Italian translation appended.
+
+    The original stays in, so names, sites and error codes still match; on failure the original is used alone."""
+    if not looks_english(query):
+        logger.info("Language: not English, searching with the original text")
+        return query
+    logger.info("Language: English, asking Copilot for an Italian translation")
+    try:
+        translation = (llm(build_translation_prompt(query.strip())) or "").strip()
+    except Exception:
+        logger.exception("Translation failed; searching with the original text")
+        return query
+    logger.info("Translation: %s", translation[:TRANSLATION_LIMIT] or "(empty, using the original text)")
+    return f"{query}\n{translation[:TRANSLATION_LIMIT]}" if translation else query
+
+
+def log_shortlist(scored):
+    """Logs the BM25 shortlist size and its top LOG_SHORTLIST tickets with scores."""
+    logger.info("BM25 shortlist: %d tickets", len(scored))
+    for i, (t, score) in enumerate(scored[:LOG_SHORTLIST], 1):
+        logger.info("  %2d. %-10s %6.2f  %s", i, t["pkey"], score, t["summary"][:80])
+
+
 def status_label(code):
     code = (code or "").strip()
     return STATUS_LABELS.get(code) or f"Status {code}"
@@ -210,6 +275,7 @@ def format_reply(notes, candidates):
 def lookup(query, index, llm, lang=DEFAULT_LANG):
     """llm(prompt) -> str. Returns {"reply": str, "candidates": [...]}; fixed notes use `lang` (en/it)."""
     msg = MESSAGES.get(lang, MESSAGES[DEFAULT_LANG])
+    logger.info("Lookup query: %s", query)
     notes, candidates = [], []
     for pkey in extract_ids(query):
         ticket = index.get(pkey)
@@ -219,11 +285,17 @@ def lookup(query, index, llm, lang=DEFAULT_LANG):
             notes.append(msg["not_found"].format(pkey=pkey))
 
     text = ID_RE.sub(" ", query)
-    shortlist = [t for t in index.shortlist(text) if t["pkey"] not in {c["pkey"] for c in candidates}]
+    if candidates:
+        logger.info("Exact ID matches: %s", [c["pkey"] for c in candidates])
+    scored = [(t, s) for t, s in index.shortlist_scored(search_text(text, llm))
+              if t["pkey"] not in {c["pkey"] for c in candidates}]
+    log_shortlist(scored)
+    shortlist = [t for t, _ in scored]
     room = MAX_RESULTS - len(candidates)
     if shortlist and room > 0:
         try:
             ranked = parse_llm_results(llm(build_prompt(text.strip(), shortlist)), shortlist)
+            logger.info("LLM picked: %s", ranked or "nothing")
             candidates += [_candidate(index.tickets[p], r) for p, r in ranked[:room]]
         except Exception:
             logger.exception("LLM ranking failed; falling back to keyword matches")
@@ -296,14 +368,19 @@ def parse_recommendation(output, shortlist):
 def recommend(query, index, llm, lang=DEFAULT_LANG):
     """llm(prompt) -> str. Copilot ranks assignees of similar assigned tickets; local BM25 vote is the fallback."""
     msg = MESSAGES.get(lang, MESSAGES[DEFAULT_LANG])
-    shortlist = [t for t, _ in index.shortlist_scored(query) if t["assignee"] != "Unassigned"]
+    logger.info("Recommend query: %s", query)
+    search = search_text(query, llm)
+    scored = [(t, s) for t, s in index.shortlist_scored(search) if t["assignee"] != "Unassigned"]
+    log_shortlist(scored)
+    shortlist = [t for t, _ in scored]
     if not shortlist:
         return {"reply": msg["no_experts"], "notes": [], "experts": []}
     try:
         ranked = parse_recommendation(llm(build_recommend_prompt(query.strip(), shortlist)), shortlist)
+        logger.info("LLM picked experts: %s", ranked or "nobody")
     except Exception:
         logger.exception("LLM expert ranking failed; falling back to keyword-based recommendation")
-        result = recommend_local(query, index, lang)
+        result = recommend_local(search, index, lang)
         result["notes"] = [msg["llm_unavailable"]]
         return result
     if not ranked:
@@ -413,8 +490,11 @@ def categorize(query, index, llm):
     """llm(prompt) -> str. Suggests an ISSUETYPE; ticket IDs in the text are treated as plain text."""
     no_category = {"reply": "No category could be suggested. Try adding more detail (system, site, error).",
                    "category": None, "alternatives": [], "examples": []}
-    scored = index.shortlist_scored(query)
+    logger.info("Categorize query: %s", query)
+    scored = index.shortlist_scored(search_text(query, llm))
+    log_shortlist(scored)
     ranking = category_scores(scored)
+    logger.info("BM25 category scores: %s", [(c, round(s, 2)) for c, s in ranking])
     if not ranking:
         return no_category
 
@@ -424,7 +504,9 @@ def categorize(query, index, llm):
     notes, reason, top = [], "", ranking[0][0]
     try:
         top, reason = parse_category(llm(build_category_prompt(query.strip(), shortlist)), shortlist)
+        logger.info("LLM picked category: %s (%s)", top, reason)
     except Exception:
+        logger.exception("LLM category ranking failed; using the best keyword match")
         notes.append("LLM ranking was unavailable; showing the best keyword match.")
     if top is None:
         return no_category

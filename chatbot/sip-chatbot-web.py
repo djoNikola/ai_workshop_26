@@ -1,9 +1,11 @@
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import threading
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +29,8 @@ LOG_LIMIT = 8000
 LLM_TIMEOUT = 120
 INDEX_DATA = None
 LANGS = ("en", "it")
+LOG_FILE = Path(__file__).with_name("sip-chatbot.log")
+logger = logging.getLogger("sip-chatbot")
 
 
 class SetupError(Exception):
@@ -188,9 +192,13 @@ def get_status():
 
 def run_copilot(prompt):
     """Single independent call (no --continue); raises on failure so lookup() can fall back."""
+    logger.debug("Copilot prompt:\n%s", prompt)
+    started = time.monotonic()
     with lock:
         proc = subprocess.run([COPILOT, "--silent"], input=prompt, capture_output=True,
                               text=True, encoding="utf-8", timeout=LLM_TIMEOUT)
+    logger.info("Copilot call took %.1f s (exit code %d)", time.monotonic() - started, proc.returncode)
+    logger.debug("Copilot reply:\n%s", proc.stdout)
     if proc.returncode != 0 or not proc.stdout.strip():
         raise RuntimeError(proc.stderr.strip() or "empty reply")
     return proc.stdout
@@ -270,7 +278,19 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def setup_logging():
+    """Logs go to the console and to sip-chatbot.log; LOG_LEVEL=DEBUG also logs full Copilot prompts and replies."""
+    level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, level, logging.INFO),
+        format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, encoding="utf-8")],
+    )
+
+
 if __name__ == "__main__":
+    setup_logging()
     print(f"Tickets loaded: {len(load_index().tickets)}")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://localhost:{PORT}/"

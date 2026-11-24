@@ -164,7 +164,7 @@ class RecommendTests(unittest.TestCase):
             (self.ticket("X-5", "carol"), 0.5),
             (self.ticket("X-6", "dave"), 0.1),
         ]
-        result = tl.recommend_local("sample", self.ScoredIndex(rows))
+        result = tl.recommend_local("campione", self.ScoredIndex(rows))
         self.assertEqual([x["assignee"] for x in result["experts"]], ["ana", "bob", "carol"])
         self.assertEqual([x["pkey"] for x in result["experts"][0]["tickets"]], ["X-1", "X-3"])
         self.assertEqual([x["pkey"] for x in result["experts"][2]["tickets"]], ["X-5"])
@@ -172,7 +172,7 @@ class RecommendTests(unittest.TestCase):
 
     def test_no_assigned_matches_skips_llm(self):
         index = self.ScoredIndex([(self.ticket("X-1", "Unassigned"), 1.0)])
-        result = tl.recommend("sample", index, lambda p: self.fail("LLM called"))
+        result = tl.recommend("campione", index, lambda p: self.fail("LLM called"))
         self.assertEqual(result["experts"], [])
         self.assertIn("No similar assigned tickets", result["reply"])
 
@@ -188,7 +188,7 @@ class RecommendTests(unittest.TestCase):
             prompts.append(prompt)
             return self.llm_experts(("bob", ["x-2"], 90), ("ana", ["X-1"], 40))(prompt)
 
-        result = tl.recommend("sample", index, llm)
+        result = tl.recommend("campione", index, llm)
         rows = json.loads(prompts[0].split("Tickets:\n", 1)[1])
         self.assertEqual([r["pkey"] for r in rows], ["X-1", "X-2"])
         self.assertEqual(set(rows[0]), {"pkey", "summary", "description", "assignee"})
@@ -198,25 +198,25 @@ class RecommendTests(unittest.TestCase):
     def test_llm_cannot_invent_people_or_tickets(self):
         index = self.ScoredIndex([(self.ticket("X-1", "ana"), 5.0), (self.ticket("X-2", "bob"), 3.0)])
         llm = self.llm_experts(("eve", ["X-1"], 99), ("ana", ["X-2", "X-9"], 50), ("bob", ["X-2"], 30))
-        result = tl.recommend("sample", index, llm)
+        result = tl.recommend("campione", index, llm)
         self.assertEqual([x["assignee"] for x in result["experts"]], ["bob"])
 
     def test_llm_empty_list_means_no_experts(self):
         index = self.ScoredIndex([(self.ticket("X-1", "ana"), 5.0)])
-        result = tl.recommend("sample", index, self.llm_experts())
+        result = tl.recommend("campione", index, self.llm_experts())
         self.assertEqual(result["experts"], [])
 
     def test_llm_failure_falls_back_to_local_vote(self):
         index = self.ScoredIndex([(self.ticket("X-1", "ana"), 5.0), (self.ticket("X-2", "bob"), 3.0)])
         with self.assertLogs("ticket_lookup", level="ERROR"):
-            result = tl.recommend("sample", index, lambda p: "not JSON", "it")
+            result = tl.recommend("campione", index, lambda p: "not JSON", "it")
         self.assertEqual([x["assignee"] for x in result["experts"]], ["ana", "bob"])
         self.assertEqual(result["notes"], [tl.MESSAGES["it"]["llm_unavailable"]])
 
     def test_evidence_limited_to_five_tickets(self):
         rows = [(self.ticket(f"X-{i}", "ana"), 1.0) for i in range(8)]
         llm = self.llm_experts(("ana", [f"X-{i}" for i in range(8)], 70))
-        result = tl.recommend("sample", self.ScoredIndex(rows), llm)
+        result = tl.recommend("campione", self.ScoredIndex(rows), llm)
         self.assertEqual(len(result["experts"][0]["tickets"]), tl.RECOMMENDATION_TICKETS)
 
 
@@ -271,6 +271,111 @@ class CategorizeTests(unittest.TestCase):
         rows = tl.build_category_prompt("q", INDEX.shortlist(self.QUERY))
         self.assertNotIn("assignee", rows)
         self.assertNotIn('"status"', rows)
+
+
+class TranslationTests(unittest.TestCase):
+    EN_QUERY = "The samples that were delivered and the ones still to deliver should be filtered in the list"
+    IT_TRANSLATION = "filtrare campioni consegnati e da consegnare"
+
+    def translating_llm(self, reply, prompts):
+        """Answers the translation prompt with IT_TRANSLATION and every other prompt with `reply(prompt)`."""
+        def llm(prompt):
+            prompts.append(prompt)
+            if prompt.startswith("Translate"):
+                return self.IT_TRANSLATION
+            return reply(prompt)
+        return llm
+
+    def test_detects_english(self):
+        self.assertTrue(tl.looks_english(self.EN_QUERY))
+        self.assertTrue(tl.looks_english("Printer is not working after the update"))
+
+    def test_detects_short_english_keyword_queries(self):
+        self.assertTrue(tl.looks_english("Samples missing in worklist"))
+        self.assertTrue(tl.looks_english("Results not sent to HIS"))
+        self.assertTrue(tl.looks_english("sample"))
+
+    def test_detects_english_contractions(self):
+        self.assertTrue(tl.looks_english("The report doesn't show"))
+        self.assertTrue(tl.looks_english("LIS won’t start"))  # typographic apostrophe
+
+    def test_italian_and_keywords_are_not_english(self):
+        self.assertFalse(tl.looks_english("il cliente vuole filtrare i campioni consegnati e da consegnare"))
+        self.assertFalse(tl.looks_english("preanalitica"))
+        self.assertFalse(tl.looks_english("worklist"))
+        self.assertFalse(tl.looks_english(""))
+
+    def test_italian_elision_is_not_english(self):
+        self.assertFalse(tl.looks_english("l'utente riceve l'errore"))
+        self.assertFalse(tl.looks_english("Supporto all'avviamento"))
+
+    def test_italian_ticket_summaries_are_not_english(self):
+        summaries = [t["summary"] for t in INDEX.tickets.values()]
+        flagged = [s for s in summaries if tl.looks_english(s)]
+        self.assertLess(len(flagged), len(summaries) * 0.002, flagged)
+
+    def test_italian_query_skips_llm(self):
+        q = "il cliente non riesce a stampare le etichette"
+        self.assertEqual(tl.search_text(q, lambda p: self.fail("LLM called")), q)
+
+    def test_english_query_keeps_original_and_adds_translation(self):
+        prompts = []
+        text = tl.search_text(self.EN_QUERY, self.translating_llm(None, prompts))
+        self.assertEqual(text, f"{self.EN_QUERY}\n{self.IT_TRANSLATION}")
+        self.assertIn(self.EN_QUERY, prompts[0])
+
+    def test_translation_failure_uses_original(self):
+        with self.assertLogs("ticket_lookup", level="ERROR"):
+            self.assertEqual(tl.search_text(self.EN_QUERY, failing_llm), self.EN_QUERY)
+        self.assertEqual(tl.search_text(self.EN_QUERY, lambda p: "  "), self.EN_QUERY)
+
+    def test_translation_is_truncated(self):
+        text = tl.search_text(self.EN_QUERY, lambda p: "x" * 5000)
+        self.assertEqual(len(text), len(self.EN_QUERY) + 1 + tl.TRANSLATION_LIMIT)
+
+    def test_without_translation_english_misses_ticket(self):
+        keys = [t["pkey"] for t in INDEX.shortlist(self.EN_QUERY)][:tl.MAX_RESULTS]
+        self.assertNotIn("BTU-4115", keys)
+
+    def test_lookup_finds_italian_ticket_from_english(self):
+        prompts = []
+        r = tl.lookup(self.EN_QUERY, INDEX, self.translating_llm(llm_returning("BTU-4115"), prompts))
+        self.assertEqual([c["pkey"] for c in r["candidates"]], ["BTU-4115"])
+        self.assertEqual(len(prompts), 2)
+        # ranking prompt gets the original English text, not the translation
+        self.assertIn(f"Client description:\n{self.EN_QUERY}\n", prompts[1])
+        self.assertNotIn(self.IT_TRANSLATION, prompts[1])
+
+    def test_lookup_fallback_uses_translated_shortlist(self):
+        def llm(prompt):
+            if prompt.startswith("Translate"):
+                return self.IT_TRANSLATION
+            raise RuntimeError("down")
+        with self.assertLogs("ticket_lookup", level="ERROR"):
+            r = tl.lookup(self.EN_QUERY, INDEX, llm)
+        self.assertEqual(r["candidates"][0]["pkey"], "BTU-4115")
+
+    def test_recommend_searches_with_translation(self):
+        queries = []
+
+        class RecordingIndex:
+            def shortlist_scored(self, query):
+                queries.append(query)
+                return [({"pkey": "X-1", "summary": "s", "description": "", "assignee": "ana"}, 1.0)]
+
+        with self.assertLogs("ticket_lookup", level="ERROR"):
+            r = tl.recommend(self.EN_QUERY, RecordingIndex(), self.translating_llm(lambda p: "not JSON", []))
+        self.assertEqual([x["assignee"] for x in r["experts"]], ["ana"])
+        # both the LLM shortlist and the local fallback search with the translation
+        self.assertEqual(len(queries), 2)
+        self.assertTrue(all(self.IT_TRANSLATION in q for q in queries))
+
+    def test_categorize_uses_translation(self):
+        prompts = []
+        r = tl.categorize(self.EN_QUERY, INDEX, self.translating_llm(lambda p: "not JSON", prompts))
+        self.assertEqual(r["category"]["code"], INDEX.get("BTU-4115")["issuetype"])
+        self.assertIn("BTU-4115", [e["pkey"] for e in r["examples"]])
+        self.assertTrue(prompts[0].startswith("Translate"))
 
 
 if __name__ == "__main__":

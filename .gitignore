@@ -3,3 +3,5 @@ chatbot/__pycache__/
 __pycache__/
 *.py[cod]
 /.idea
+# Server logs
+chatbot/sip-chatbot.log

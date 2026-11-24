@@ -14,6 +14,9 @@ Local web chat for project managers: enter a description of a customer's problem
 Each query is independent (no `--continue`). Status labels are defined in `STATUS_LABELS` in `ticket_lookup.py`
 (1/3/4/5/6 follow Jira defaults — the project manager should confirm them); unknown codes are displayed as `Status <code>`.
 
+English queries detected by a local heuristic are sent to Copilot for Italian translation before the search; the original query
+is retained for matching and ranking. If translation fails, the search uses the original query.
+
 **Interface language:** English by default; the `EN`/`IT` button in the top-right corner switches to Italian, and the choice is saved
 in the browser (`localStorage`). Page text is defined in the `T` object in `static/app.js`, and fixed chat notices
 ("not found", "no match", etc.) are in `MESSAGES` in `ticket_lookup.py` (`/api/chat` accepts `lang`: `en` or `it`).
@@ -25,6 +28,8 @@ the language selector switches themes; the choice is saved in the browser. Color
 
 **Privacy:** the query and up to 30 ticket excerpts (ID, title, shortened description, status, and assignee) are sent to the Copilot service.
 Since the CSV is a real export, this must be approved or the data anonymized before actual use (see `SPEC.md` §10).
+Queries, translations, and shortlist details are also logged to the console and `chatbot/sip-chatbot.log`.
+Setting `LOG_LEVEL=DEBUG` additionally logs full Copilot prompts and responses, including ticket excerpts.
 
 ## Pages
 
